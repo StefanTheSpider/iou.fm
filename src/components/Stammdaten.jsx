@@ -24,7 +24,7 @@ function useIbanField() {
   return { value, setValue, info, setInfo, check };
 }
 
-export default function Stammdaten({ data, updateData, auth, sync }) {
+export default function Stammdaten({ data, updateData, auth, sync, shopify }) {
   const isAdmin = auth?.currentUser?.role === "admin";
   return (
     <div>
@@ -36,7 +36,7 @@ export default function Stammdaten({ data, updateData, auth, sync }) {
       {auth?.currentUser?.role === "admin" && <DatevConfig data={data} updateData={updateData} />}
       <Accounts data={data} updateData={updateData} />
       <Suppliers data={data} updateData={updateData} />
-      <ShopifySettings data={data} updateData={updateData} />
+      <ShopifySettings data={data} updateData={updateData} shopify={isAdmin ? shopify : null} />
       <Branding data={data} updateData={updateData} />
     </div>
   );
@@ -205,24 +205,78 @@ function Users({ auth }) {
   );
 }
 
-function ShopifySettings({ data, updateData }) {
+const TAG_FIELDS = [
+  ["sportDe", "Sport-Tags (DE)", "sport"],
+  ["konzertDe", "Konzert-Tags (DE)", "konzert"],
+  ["reisen", "Reisen-Tags", "reisen"],
+  ["refundRequest", "Tag „Rückerstattung angefragt\"", "rückerstattung angefragt"],
+  ["at", "Österreich-Tags (optional, Land kommt aus dem Titel)", ""],
+];
+const splitTags = (s) => String(s || "").split(",").map((t) => t.trim()).filter(Boolean);
+
+function ShopifySettings({ data, updateData, shopify }) {
   const sp = data.shopify || {};
+  const tagStr = sp.tagStr || {};
   const set = (patch) => updateData((d) => ({ ...d, shopify: { ...(d.shopify || {}), ...patch } }));
+  const setTag = (k, v) => set({ tagStr: { ...(sp.tagStr || {}), [k]: v } });
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  async function saveServer() {
+    setErr(""); setMsg(""); setBusy("save");
+    try {
+      const tags = {}; for (const [k] of TAG_FIELDS) tags[k] = splitTags(tagStr[k]);
+      await shopify.save({ domain: sp.domain, token: sp.token, tags });
+      setMsg("Auf dem Server hinterlegt – der Nacht-Abgleich nutzt das jetzt.");
+    } catch (e) { setErr(e.message || "Fehler."); } finally { setBusy(""); }
+  }
+  async function syncNow() {
+    setErr(""); setMsg(""); setBusy("sync");
+    try {
+      const r = await shopify.syncNow();
+      setMsg(`Abgleich fertig: ${r.cancellations ?? 0} Stornos, ${r.refunds ?? 0} Erstattungen, ${r.requests ?? 0} Anfragen (gescannt: ${r.scanned ?? 0}).`);
+    } catch (e) { setErr(e.message || "Abgleich fehlgeschlagen."); } finally { setBusy(""); }
+  }
 
   return (
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Shopify-Anbindung</h2>
       <p className="note">
-        Für den Bestell-Import im Erstattungs-Modul (Kundenname, gezahlter Betrag, Event).
-        Den Admin-API-Token bekommst du in Shopify unter <em>Einstellungen → Apps und Vertriebskanäle → App entwickeln → Admin-API-Token</em>.
-        Token wird verschlüsselt im Tresor gespeichert (oben mit „Änderungen speichern" sichern).
+        Für den Bestell-Import (Erstattungen) und den nächtlichen Server-Abgleich (Stornos, Rückerstattungen, Anfragen).
+        Lege in Shopify eine Custom App mit <strong>nur Lese-Rechten</strong> an (<em>read_orders</em>, ggf. <em>read_all_orders</em>, <em>read_customers</em>) – <strong>keine</strong> Schreibrechte.
+        Domain + Token werden lokal (Tresor) gespeichert; für den Nacht-Cron zusätzlich verschlüsselt auf dem Server.
       </p>
       <label className="field"><span>Shop-Domain (…myshopify.com)</span>
         <input type="text" value={sp.domain || ""} onChange={(e) => set({ domain: e.target.value })}
           placeholder="dein-shop.myshopify.com" /></label>
-      <label className="field"><span>Admin-API-Token</span>
+      <label className="field"><span>Admin-API-Token (read-only)</span>
         <input type="password" value={sp.token || ""} onChange={(e) => set({ token: e.target.value })}
-          placeholder="shpat_…" /></label>
+          placeholder="shpat_… / shppa_…" /></label>
+
+      {shopify && (
+        <>
+          <h3 style={{ margin: "16px 0 4px", fontSize: 14 }}>Kategorie-Tags für die Buchhaltung</h3>
+          <p className="note" style={{ marginTop: 0 }}>
+            Land (DE/Österreich) wird automatisch aus dem Veranstaltungs-Titel erkannt. Sport vs. Konzerte über Tags
+            (Komma-getrennt). Typ „Reisen" ergibt die Kategorie Reisen. Mehrere Tags je Feld mit Komma trennen.
+          </p>
+          <div className="row">
+            {TAG_FIELDS.map(([k, label, ph]) => (
+              <label className="field" key={k}><span>{label}</span>
+                <input type="text" value={tagStr[k] ?? ph} placeholder={ph || "—"} onChange={(e) => setTag(k, e.target.value)} /></label>
+            ))}
+          </div>
+          {err && <p className="error-text">{err}</p>}
+          {msg && <p className="note" style={{ color: "var(--ok, #3ddc97)" }}>{msg}</p>}
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <span className="note">Server-Abgleich läuft täglich um 0 Uhr; hier kannst du ihn auch sofort anstoßen.</span>
+            <div className="spacer" />
+            <button className="btn ghost" onClick={saveServer} disabled={!!busy || !sp.domain}>{busy === "save" ? "Speichere…" : "Auf Server hinterlegen"}</button>
+            <button className="btn" onClick={syncNow} disabled={!!busy}>{busy === "sync" ? "Gleiche ab…" : "Jetzt abgleichen"}</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

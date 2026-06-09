@@ -38,8 +38,10 @@ function emptyRow(defaults = {}) {
   };
 }
 
-export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true }) {
+export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null }) {
   const isErstattung = profile !== "sammel";
+  const cancelledSet = new Set((feed?.cancellations || []).map((c) => c.orderNumber));
+  const cancelInfo = (num) => (feed?.cancellations || []).find((c) => c.orderNumber === String(num).replace(/^#/, ""));
   const accounts = data.accounts || [];
   const shopify = data.shopify || {};
   const shopifyConnected = !!(shopify.domain && shopify.token);
@@ -83,6 +85,8 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         row: { orderNumber: o.orderNumber, customerName: o.customerName, method: o.method || "ueberweisung", paid: (o.totalCents / 100).toFixed(2), currency: o.currency, purpose: o.suggestedPurpose },
       }), ...rs]);
       setOrderInput("");
+      const c = cancelInfo(num);
+      if (c) setError(`⚠︎ Bestellung ${o.orderNumber} ist laut Shopify bereits storniert (${new Date(c.date).toLocaleDateString("de-DE")}).`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
@@ -241,6 +245,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                         onChange={(e) => patchRow(r.id, { orderNumber: e.target.value })} />
                       <span className="pill">{methodLabel(r.method)}</span>
                       {r.refundViaSepa && r.method !== "ueberweisung" && <span className="pill warn">→ per Überweisung</span>}
+                      {r.orderNumber && cancelledSet.has(String(r.orderNumber).replace(/^#/, "")) && <span className="pill bad" title="laut Shopify storniert">storniert</span>}
                     </div>
                   )}
                 </div>

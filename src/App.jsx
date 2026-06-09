@@ -10,6 +10,8 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration } from "./lib/feed.js";
+import { Anfragen, Stornos } from "./components/ShopifyTabs.jsx";
 import BRANDING from "./branding.js";
 import { applyTheme } from "./lib/theme.js";
 
@@ -22,6 +24,8 @@ export default function App() {
   const [update, setUpdate] = useState(null); // { version, notes, install }
   const [updating, setUpdating] = useState(false);
   const [updErr, setUpdErr] = useState("");
+  const [feed, setFeed] = useState(null);       // Shopify-Feed vom Hub (Stornos/Refunds/Anfragen)
+  const [feedBusy, setFeedBusy] = useState(false);
   const sessionRef = useRef(null);
   const savedTimer = useRef(null);
 
@@ -32,7 +36,7 @@ export default function App() {
 
   useEffect(() => {
     restoreSession().then((s) => {
-      if (s) { setSession(s); sessionRef.current = s; if (s.tenantId) pullQuiet(); }
+      if (s) { setSession(s); sessionRef.current = s; if (s.tenantId) { pullQuiet(); refreshFeed(); } }
     }).finally(() => setRestoring(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -85,6 +89,15 @@ export default function App() {
       if (res?.data) { applyMerged(res.data); await saveVault(sessionRef.current, res.data); }
     } catch (e) { console.warn("Sync (pull) fehlgeschlagen:", e.message); }
   }, [applyMerged]);
+
+  // Shopify-Feed (Stornos/Refunds/Anfragen) vom Hub laden.
+  const refreshFeed = useCallback(async () => {
+    if (!sessionRef.current?.tenantId) return;
+    setFeedBusy(true);
+    try { const f = await getFeed(sessionRef.current); if (f) setFeed(f); }
+    catch (e) { console.warn("Feed laden fehlgeschlagen:", e.message); }
+    finally { setFeedBusy(false); }
+  }, []);
 
   // Auto-Pull: aktuellen Cloud-Stand automatisch holen, wenn das Fenster wieder
   // in den Fokus kommt und alle 60 s – aber nur, wenn nichts Ungespeichertes
@@ -146,17 +159,24 @@ export default function App() {
     if (sessionRef.current) sessionRef.current = { ...sessionRef.current, users };
   }, []);
 
-  // Nach dem Anmelden den aktuellen Cloud-Stand holen.
+  // Nach dem Anmelden den aktuellen Cloud-Stand + Shopify-Feed holen.
   const onUnlock = useCallback((s) => {
     setSession(s); sessionRef.current = s;
-    if (s.tenantId) pullQuiet();
-  }, [pullQuiet]);
+    if (s.tenantId) { pullQuiet(); refreshFeed(); }
+  }, [pullQuiet, refreshFeed]);
 
   // Status/Manueller Refresh für die Stammdaten-Oberfläche (Sync läuft automatisch).
   const sync = useMemo(() => ({
     company: session?.company || "",
     run: async () => { await pullQuiet(); await pushQuiet(); },
   }), [session, pullQuiet, pushQuiet]);
+
+  // Shopify-Integration (nur Admin): Server-Konfig + manueller Abgleich.
+  const shopify = useMemo(() => ({
+    getIntegration: () => getIntegration(sessionRef.current),
+    save: (cfg) => saveIntegration(sessionRef.current, cfg),
+    syncNow: async () => { const r = await triggerSync(sessionRef.current); await refreshFeed(); return r; },
+  }), [refreshFeed]);
 
   const UpdateBanner = () => update ? (
     <div className="update-banner">
@@ -198,6 +218,8 @@ export default function App() {
             <button className={`tab ${tab === "lohn" ? "active" : ""}`} onClick={() => setTab("lohn")}>Löhne</button>
             <button className={`tab ${tab === "erstattung" ? "active" : ""}`} onClick={() => setTab("erstattung")}>{payoutLabel}</button>
             {rechnungOn && <button className={`tab ${tab === "rechnung" ? "active" : ""}`} onClick={() => setTab("rechnung")}>Rechnungsprüfung</button>}
+            <button className={`tab ${tab === "anfragen" ? "active" : ""}`} onClick={() => setTab("anfragen")}>Anfragen</button>
+            <button className={`tab ${tab === "stornos" ? "active" : ""}`} onClick={() => setTab("stornos")}>Stornos</button>
             <button className={`tab ${tab === "archiv" ? "active" : ""}`} onClick={() => setTab("archiv")}>Archiv</button>
             {isAdmin && <button className={`tab ${tab === "stammdaten" ? "active" : ""}`} onClick={() => setTab("stammdaten")}>Stammdaten</button>}
           </nav>
@@ -222,11 +244,13 @@ export default function App() {
         ) : (
           <>
             {tab === "lohn" && <Lohn data={data} updateData={updateData} canPay={isAdmin} />}
-            {tab === "erstattung" && <Erstattungen data={data} updateData={updateData} profile={payoutMode} canPay={isAdmin} />}
+            {tab === "erstattung" && <Erstattungen data={data} updateData={updateData} profile={payoutMode} canPay={isAdmin} feed={feed} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={updateData} />}
+            {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
+            {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}
             {tab === "stammdaten" && isAdmin && (
-              <Stammdaten data={data} updateData={updateData} sync={sync}
+              <Stammdaten data={data} updateData={updateData} sync={sync} shopify={shopify}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
           </>
