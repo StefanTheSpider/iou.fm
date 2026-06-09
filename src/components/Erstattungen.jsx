@@ -54,15 +54,14 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [fStatus, setFStatus] = useState("offen");
   const [showModal, setShowModal] = useState(false);
   const [saved, setSaved] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
 
   // Alle Änderungen laufen über data.refunds → der Speichern-Button erscheint.
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
   function patchRow(id, patch) { setRefunds((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r))); }
   function removeRow(id) {
-    const r = (data.refunds || []).find((x) => x.id === id);
-    const who = (r && (r.customerName || r.orderNumber)) || "dieser Eintrag";
-    if (!window.confirm(`Eintrag „${who}" wirklich löschen?\n\nDas lässt sich nicht rückgängig machen. Bereits erledigte Zahlungen bleiben im Archiv erhalten.`)) return;
     setRefunds((rs) => rs.filter((x) => x.id !== id));
+    setConfirmDel(null);
   }
   function addEmpty() { setRefunds((rs) => [emptyRow(isErstattung ? { mode: defMode, feePct: defFee } : { mode: "full" }), ...rs]); }
 
@@ -268,7 +267,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                 )}
                 {r.status === "erledigt"
                   ? <button className="btn ghost small" onClick={() => reopen(r.id)} title="wieder öffnen">↺</button>
-                  : <button className="btn danger small" onClick={() => removeRow(r.id)}>✕</button>}
+                  : <button className="btn danger small" onClick={() => setConfirmDel(r.id)} title="Eintrag entfernen">✕</button>}
               </div>
 
               <div className="refund-grid">
@@ -314,6 +313,32 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         <SepaModal accounts={accounts} count={eligible.length} sumCents={sumEligible}
           onClose={() => setShowModal(false)} onCreate={createSepa} />
       )}
+
+      {confirmDel && (
+        <ConfirmModal
+          name={(rows.find((x) => x.id === confirmDel)?.customerName) || "diesen Eintrag"}
+          onCancel={() => setConfirmDel(null)}
+          onConfirm={() => removeRow(confirmDel)} />
+      )}
+    </div>
+  );
+}
+
+function ConfirmModal({ name, onCancel, onConfirm }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60 }} onClick={onCancel}>
+      <div className="card" style={{ width: 420, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+        <h2 style={{ marginTop: 0 }}>Eintrag löschen?</h2>
+        <p className="note">
+          „{name}" wird aus der Liste entfernt. Das lässt sich nicht rückgängig machen.
+          Bereits als erledigt markierte Zahlungen bleiben im Archiv erhalten.
+        </p>
+        <div className="toolbar" style={{ marginBottom: 0 }}>
+          <button className="btn ghost" onClick={onCancel}>Abbrechen</button>
+          <div className="spacer" />
+          <button className="btn danger" onClick={onConfirm}>Endgültig löschen</button>
+        </div>
+      </div>
     </div>
   );
 }

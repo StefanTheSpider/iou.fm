@@ -21,6 +21,7 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const [update, setUpdate] = useState(null); // { version, notes, install }
   const [updating, setUpdating] = useState(false);
+  const [updErr, setUpdErr] = useState("");
   const sessionRef = useRef(null);
   const savedTimer = useRef(null);
 
@@ -126,8 +127,12 @@ export default function App() {
   }, [flashSaved, pushQuiet]);
 
   function lock() {
-    if (dirty && !window.confirm("Es gibt ungespeicherte Änderungen. Trotzdem abmelden? Die Änderungen gehen verloren.")) return;
-    clearSession(); setSession(null); sessionRef.current = null; setDirty(false);
+    // window.confirm gibt es in der Desktop-WebView nicht – daher beim Abmelden
+    // ungespeicherte Änderungen sicherheitshalber speichern (kein Datenverlust).
+    const s = sessionRef.current;
+    const finish = () => { clearSession(); setSession(null); sessionRef.current = null; setDirty(false); };
+    if (dirty && s) saveVault(s, s.data).then(finish).catch(finish);
+    else finish();
   }
 
   const addUser = useCallback(async (username, password, role) => {
@@ -157,11 +162,12 @@ export default function App() {
     <div className="update-banner">
       <span>Neue Version <strong>{update.version}</strong> verfügbar.</span>
       <button className="btn small" disabled={updating} onClick={async () => {
-        setUpdating(true);
+        setUpdErr(""); setUpdating(true);
         try { await update.install(); }
-        catch (e) { setUpdating(false); alert("Update fehlgeschlagen: " + (e.message || e)); }
+        catch (e) { setUpdating(false); setUpdErr(e.message || String(e)); }
       }}>{updating ? "Installiere…" : "Jetzt aktualisieren & neu starten"}</button>
       <button className="link-btn" onClick={() => setUpdate(null)}>später</button>
+      {updErr && <span style={{ opacity: 0.85 }}>· Fehler: {updErr}</span>}
     </div>
   ) : null;
 
