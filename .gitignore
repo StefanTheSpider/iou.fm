@@ -1,0 +1,38 @@
+# ---- Abhängigkeiten & Builds ----
+node_modules/
+dist/
+dist_*/
+build/
+build_check/
+/src-tauri/target/
+/src-tauri/gen/schemas/
+
+# ---- Vite-Temp ----
+vite.config.js.timestamp-*
+*.timestamp-*.mjs
+
+# ---- GEHEIM: niemals committen ----
+.env
+.env.local
+.env.*.local
+shopify.local.json
+*.p12
+*.pem
+*.key
+*.keystore
+*.mobileprovision
+secrets.*
+*.secret
+
+# ---- Server: Mandanten-DBs (lokal) ----
+server/data/
+server/node_modules/
+
+# ---- Betriebssystem / Editor ----
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# Bewusst behalten (Vorlagen ohne Geheimnisse):
+#   .env.example, shopify.local.example.json

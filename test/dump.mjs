@@ -1,0 +1,10 @@
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import fs from "node:fs";
+const path = "/sessions/great-adoring-hopper/mnt/uploads/Tix & Travel Abstimmliste LOhn 05_26 geändert(DE - SEPA, Kurzform).pdf";
+const data = new Uint8Array(fs.readFileSync(path));
+const pdf = await getDocument({ data, isEvalSupported: false, useSystemFonts: false }).promise;
+const page = await pdf.getPage(1);
+const c = await page.getTextContent();
+const items = c.items.filter(i=>i.str && i.str.trim()).map(i=>({x:Math.round(i.transform[4]),y:Math.round(i.transform[5]),s:i.str}));
+items.sort((a,b)=> b.y-a.y || a.x-b.x);
+for (const it of items) console.log(`y=${it.y} x=${it.x}  "${it.s}"`);

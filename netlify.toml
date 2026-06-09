@@ -1,0 +1,12 @@
+# Netlify / kompatibel mit Cloudflare Pages.
+# Statische SPA – alle Daten bleiben verschlüsselt im Browser (kein Server-Backend).
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Für die Tix-Edition stattdessen:  command = "npm run build:tix"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

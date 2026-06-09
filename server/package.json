@@ -1,0 +1,12 @@
+{
+  "name": "sepa2-sync-hub",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "iou.fm Sync-Hub – verschlüsselter Mandanten-Speicher (DB pro Mandant). Einzige Cloud-Komponente. Von fork and merge UG.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "node test/hub.test.mjs"
+  }
+}

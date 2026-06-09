@@ -1,0 +1,284 @@
+// iou.fm – Sync-Hub
+// -------------------------------------------------------------
+// Einzige Cloud-Komponente. Speichert pro Mandant eine EIGENE DB-Datei und
+// darin NUR Ende-zu-Ende-verschluesselten Chiffretext. Der Server kann die
+// Inhalte nicht lesen (keine Datenschluessel hier).
+//
+// Anmeldung (server-gestuetzt, aber weiterhin E2E – Modell wie Bitwarden):
+//   Aus dem Passwort leitet der Client ZWEI Werte ab:
+//     - authHash  -> an den Server (der speichert nur sha256(authHash) = "verifier")
+//     - vaultKey  -> bleibt auf dem Geraet, entpackt den DEK (Datenschluessel)
+//   Der Server kann den Nutzer authentifizieren und den verschluesselten Block
+//   herausgeben, ihn aber NICHT entschluesseln.
+//
+// Endpunkte:
+//   GET  /health
+//   POST /api/auth/register   { username, salt, authHash, wrappedDek, company }
+//   POST /api/auth/prelogin   { username } -> { salt }
+//   POST /api/auth/login      { username, authHash } -> { tenantId, accessKey, wrappedDek, role }
+//   POST /api/auth/adduser    (Bearer accessKey) Admin legt Mitarbeiter an
+//   POST /api/auth/migrate    bestehenden Mandanten auf das Login-System heben
+//   GET/PUT/DELETE /api/tenants/:id[/doc]  (Bearer accessKey) – Sync-Transport
+
+import http from "node:http";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+
+const PORT = Number(process.env.PORT || 3000);
+const DATA_DIR = process.env.DATA_DIR || "./data";
+const TENANT_DIR = path.join(DATA_DIR, "tenants");
+const USER_DIR = path.join(DATA_DIR, "users");
+const MAX_BODY = 8 * 1024 * 1024;
+const ORIGIN = process.env.CORS_ORIGIN || "*";
+
+const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
+const newId = () => crypto.randomUUID();
+const newKey = () => crypto.randomBytes(32).toString("base64url");
+const eq = (a, b) => {
+  const x = Buffer.from(String(a || "")); const y = Buffer.from(String(b || ""));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+};
+
+// --- Pro-Mandant-Schreibsperre ----------------------------------------------
+const locks = new Map();
+function withLock(id, fn) {
+  const prev = locks.get(id) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  locks.set(id, next.catch(() => {}));
+  return next;
+}
+
+const validId = (id) => /^[0-9a-f-]{36}$/i.test(id || "");
+const validUser = (u) => /^[a-zA-Z0-9._@-]{1,64}$/.test(u || "");
+const tenantFile = (id) => path.join(TENANT_DIR, `${id}.json`);
+const userFile = (u) => path.join(USER_DIR, `${String(u).toLowerCase()}.json`);
+
+async function readJson(file) { try { return JSON.parse(await fs.readFile(file, "utf8")); } catch { return null; } }
+async function writeJson(file, obj) {
+  const tmp = file + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(obj));
+  await fs.rename(tmp, file); // atomar
+}
+const readTenant = (id) => readJson(tenantFile(id));
+const writeTenant = (t) => writeJson(tenantFile(t.tenantId), t);
+const readUser = (u) => readJson(userFile(u));
+const writeUser = (rec) => writeJson(userFile(rec.username), rec);
+
+// Mandanten-Zugriffsschluessel pruefen: neuer Klartext-accessKey ODER Alt-Hash.
+function tenantKeyOk(provided, t) {
+  if (!provided || !t) return false;
+  if (t.accessKey) return eq(provided, t.accessKey);
+  if (t.accessKeyHash) return eq(sha256(provided), t.accessKeyHash);
+  return false;
+}
+
+// --- HTTP-Helfer -------------------------------------------------------------
+function send(res, code, obj) {
+  const body = obj === undefined ? "" : JSON.stringify(obj);
+  res.writeHead(code, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": ORIGIN,
+    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization,Content-Type,If-Match",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+  });
+  res.end(body);
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > MAX_BODY) { reject(new Error("too_large")); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+      catch { reject(new Error("bad_json")); }
+    });
+    req.on("error", reject);
+  });
+}
+function bearer(req) {
+  const m = /^Bearer\s+(.+)$/.exec(req.headers["authorization"] || "");
+  return m ? m[1].trim() : "";
+}
+const body = (req) => readBody(req).catch((e) => ({ __err: e.message }));
+
+// --- Routing -----------------------------------------------------------------
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, "http://localhost");
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (req.method === "OPTIONS") return send(res, 204);
+
+    if (req.method === "GET" && url.pathname === "/health") {
+      let tenants = 0, users = 0;
+      try { tenants = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")).length; } catch {}
+      try { users = (await fs.readdir(USER_DIR)).filter((f) => f.endsWith(".json")).length; } catch {}
+      return send(res, 200, { ok: true, service: "sepa2-sync-hub", tenants, users });
+    }
+
+    // ===== AUTH ================================================================
+    if (req.method === "POST" && url.pathname === "/api/auth/register") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      if (!validUser(b.username)) return send(res, 400, { error: "bad_username" });
+      if (!b.salt || !b.authHash || !b.wrappedDek) return send(res, 400, { error: "missing_fields" });
+      if (await readUser(b.username)) return send(res, 409, { error: "username_taken" });
+      const tenantId = newId();
+      const accessKey = newKey();
+      await writeTenant({
+        tenantId, accessKey, company: String(b.company || "").slice(0, 200),
+        rev: 0, payload: null, createdAt: new Date().toISOString(), updatedAt: null,
+      });
+      await writeUser({
+        username: b.username, salt: b.salt, authVerifier: sha256(b.authHash),
+        wrappedDek: b.wrappedDek, role: "admin", tenantId, createdAt: new Date().toISOString(),
+      });
+      return send(res, 201, { tenantId, accessKey, role: "admin" });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/prelogin") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const u = await readUser(b.username);
+      if (!u) return send(res, 404, { error: "unknown_user" });
+      return send(res, 200, { salt: u.salt });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const u = await readUser(b.username);
+      if (!u || !eq(sha256(b.authHash || ""), u.authVerifier)) return send(res, 401, { error: "bad_credentials" });
+      const t = await readTenant(u.tenantId);
+      if (!t) return send(res, 404, { error: "tenant_missing" });
+      return send(res, 200, { tenantId: u.tenantId, accessKey: t.accessKey, wrappedDek: u.wrappedDek, role: u.role });
+    }
+
+    // Admin legt Mitarbeiter an (Bearer = accessKey des Mandanten + Admin-Nachweis).
+    if (req.method === "POST" && url.pathname === "/api/auth/adduser") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const admin = await readUser(b.adminUsername);
+      if (!admin || admin.role !== "admin" || !eq(sha256(b.adminAuthHash || ""), admin.authVerifier))
+        return send(res, 401, { error: "not_admin" });
+      const t = await readTenant(admin.tenantId);
+      if (!t || !tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const nu = b.newUser || {};
+      if (!validUser(nu.username)) return send(res, 400, { error: "bad_username" });
+      if (!nu.salt || !nu.authHash || !nu.wrappedDek) return send(res, 400, { error: "missing_fields" });
+      if (await readUser(nu.username)) return send(res, 409, { error: "username_taken" });
+      await writeUser({
+        username: nu.username, salt: nu.salt, authVerifier: sha256(nu.authHash),
+        wrappedDek: nu.wrappedDek, role: nu.role === "admin" ? "admin" : "user",
+        tenantId: admin.tenantId, createdAt: new Date().toISOString(),
+      });
+      return send(res, 201, { ok: true, username: nu.username });
+    }
+
+    // Benutzerliste des Mandanten (Admin).
+    if (req.method === "POST" && url.pathname === "/api/auth/users/list") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const admin = await readUser(b.adminUsername);
+      if (!admin || admin.role !== "admin" || !eq(sha256(b.adminAuthHash || ""), admin.authVerifier))
+        return send(res, 401, { error: "not_admin" });
+      const t = await readTenant(admin.tenantId);
+      if (!t || !tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      let files = [];
+      try { files = (await fs.readdir(USER_DIR)).filter((f) => f.endsWith(".json")); } catch {}
+      const users = [];
+      for (const f of files) {
+        const u = await readJson(path.join(USER_DIR, f));
+        if (u && u.tenantId === admin.tenantId) users.push({ username: u.username, role: u.role });
+      }
+      return send(res, 200, { users });
+    }
+
+    // Benutzer entfernen (Admin; nicht sich selbst, nicht den letzten Admin).
+    if (req.method === "POST" && url.pathname === "/api/auth/users/delete") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const admin = await readUser(b.adminUsername);
+      if (!admin || admin.role !== "admin" || !eq(sha256(b.adminAuthHash || ""), admin.authVerifier))
+        return send(res, 401, { error: "not_admin" });
+      const t = await readTenant(admin.tenantId);
+      if (!t || !tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const target = await readUser(b.username);
+      if (!target || target.tenantId !== admin.tenantId) return send(res, 404, { error: "not_found" });
+      if (target.username.toLowerCase() === admin.username.toLowerCase())
+        return send(res, 400, { error: "cannot_remove_self" });
+      await fs.rm(userFile(b.username), { force: true });
+      return send(res, 200, { ok: true });
+    }
+
+    // Bestehenden Mandanten auf das Login-System heben (vom Alt-Geraet ausgeloest).
+    if (req.method === "POST" && url.pathname === "/api/auth/migrate") {
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      if (!validId(b.tenantId) || !validUser(b.username)) return send(res, 400, { error: "bad_request" });
+      if (!b.salt || !b.authHash || !b.wrappedDek) return send(res, 400, { error: "missing_fields" });
+      const t = await readTenant(b.tenantId);
+      if (!t || !tenantKeyOk(b.accessKey, t)) return send(res, 401, { error: "unauthorized" });
+      const existing = await readUser(b.username);
+      if (existing && existing.tenantId !== b.tenantId) return send(res, 409, { error: "username_taken" });
+      await writeUser({
+        username: b.username, salt: b.salt, authVerifier: sha256(b.authHash),
+        wrappedDek: b.wrappedDek, role: b.role === "user" ? "user" : "admin",
+        tenantId: b.tenantId, createdAt: new Date().toISOString(),
+      });
+      // Alt-Mandant (nur Hash) auf Klartext-accessKey heben, damit Login ihn liefern kann.
+      if (!t.accessKey) { t.accessKey = b.accessKey; delete t.accessKeyHash; await writeTenant(t); }
+      return send(res, 200, { ok: true, tenantId: b.tenantId, accessKey: t.accessKey, role: b.role === "user" ? "user" : "admin" });
+    }
+
+    // ===== SYNC-TRANSPORT (Dokument) ==========================================
+    if (parts[0] === "api" && parts[1] === "tenants" && parts.length === 3 && req.method === "DELETE") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      await fs.rm(tenantFile(id), { force: true });
+      return send(res, 200, { ok: true, deleted: id });
+    }
+
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "doc") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+
+      if (req.method === "GET") {
+        return send(res, 200, { rev: t.rev, payload: t.payload, company: t.company, updatedAt: t.updatedAt });
+      }
+      if (req.method === "PUT") {
+        const b = await body(req);
+        if (b.__err) return send(res, b.__err === "too_large" ? 413 : 400, { error: b.__err });
+        return await withLock(id, async () => {
+          const cur = await readTenant(id);
+          if (!cur) return send(res, 404, { error: "not_found" });
+          if (typeof b.baseRev !== "number" || b.baseRev !== cur.rev)
+            return send(res, 409, { error: "conflict", rev: cur.rev, payload: cur.payload, updatedAt: cur.updatedAt });
+          cur.payload = b.payload ?? cur.payload;
+          if (typeof b.company === "string") cur.company = b.company.slice(0, 200);
+          cur.rev += 1;
+          cur.updatedAt = new Date().toISOString();
+          await writeTenant(cur);
+          return send(res, 200, { rev: cur.rev, updatedAt: cur.updatedAt });
+        });
+      }
+      return send(res, 405, { error: "method_not_allowed" });
+    }
+
+    return send(res, 404, { error: "not_found" });
+  } catch (e) {
+    return send(res, 500, { error: "server_error" });
+  }
+});
+
+await fs.mkdir(TENANT_DIR, { recursive: true });
+await fs.mkdir(USER_DIR, { recursive: true });
+server.listen(PORT, () => console.log(`iou.fm sync-hub on :${PORT}  (data: ${DATA_DIR})`));
+
+export { server };

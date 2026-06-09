@@ -1,0 +1,13 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "always"
+
+# WICHTIG auf Railway:
+#  - Volume an /data mounten (Settings -> Volumes), sonst gehen Mandanten-DBs bei
+#    jedem Deploy verloren.
+#  - Optional ENV: CORS_ORIGIN = exakte App-Herkunft (Default "*"; bei E2E unkritisch,
+#    da der Inhalt ohnehin verschlüsselt ist und nur mit accessKey lesbar).
