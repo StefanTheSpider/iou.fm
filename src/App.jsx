@@ -218,7 +218,7 @@ export default function App() {
             <button className={`tab ${tab === "lohn" ? "active" : ""}`} onClick={() => setTab("lohn")}>Löhne</button>
             <button className={`tab ${tab === "erstattung" ? "active" : ""}`} onClick={() => setTab("erstattung")}>{payoutLabel}</button>
             {rechnungOn && <button className={`tab ${tab === "rechnung" ? "active" : ""}`} onClick={() => setTab("rechnung")}>Rechnungsprüfung</button>}
-            <button className={`tab ${tab === "anfragen" ? "active" : ""}`} onClick={() => setTab("anfragen")}>Anfragen</button>
+            <button className={`tab ${tab === "anfragen" ? "active" : ""}`} onClick={() => setTab("anfragen")}>Rückbuchungen</button>
             <button className={`tab ${tab === "stornos" ? "active" : ""}`} onClick={() => setTab("stornos")}>Stornos</button>
             <button className={`tab ${tab === "archiv" ? "active" : ""}`} onClick={() => setTab("archiv")}>Archiv</button>
             {isAdmin && <button className={`tab ${tab === "stammdaten" ? "active" : ""}`} onClick={() => setTab("stammdaten")}>Stammdaten</button>}

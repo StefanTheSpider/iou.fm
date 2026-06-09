@@ -1,7 +1,8 @@
 // Server-seitige Shopify-Abfrage für den Nacht-Cron.
 // Liefert pro Mandant: Stornierungen, Rückerstattungen (getrennt, je mit echtem
-// Datum/Betrag) und offene Rückerstattungs-Anfragen (per Tag) – kategorisiert
-// nach Tags (Typ reisen -> "Reisen"; Typ tickets -> Sport DE/Konzerte DE/Österreich).
+// Datum/Betrag) und offene Rückbuchungen/Zahlungsreklamationen (Shopify-Disputes,
+// kein Tag) – kategorisiert nach Titel (Land) + Tags (Sport/Konzerte; Typ reisen
+// -> "Reisen"; Typ tickets -> Sport DE/Konzerte DE/Österreich).
 
 const API_VERSION = "2024-10";
 const lc = (s) => String(s || "").toLowerCase().trim();
@@ -38,6 +39,7 @@ export function normalizeOrder(node) {
       amountCents: cents(r.totalRefundedSet?.shopMoney),
       currency: r.totalRefundedSet?.shopMoney?.currencyCode || money.currencyCode || "EUR",
     })),
+    disputes: (node.disputes || []).map((d) => ({ id: d.id, initiatedAs: d.initiatedAs, status: d.status })),
   };
 }
 
@@ -86,20 +88,23 @@ export function extractEvents(order, tagCfg, since) {
   return { cancellations, refunds };
 }
 
-// Offene Rückerstattungs-Anfrage? (per Tag markiert, noch nicht erledigt)
-export function classifyRequest(order, requestTags = []) {
-  const tags = [...(order.orderTags || []), ...(order.productTags || [])].map(lc);
-  const tagged = (requestTags || []).some((t) => tags.includes(lc(t)));
-  if (!tagged) return null;
-  const fs = lc(order.financialStatus);
-  const status = order.cancelledAt ? "storniert"
-    : fs.includes("refunded") ? "erstattet"
-    : "offen";
-  return {
+// Zahlungsreklamationen / Rückbuchungen (Disputes) aus Shopify.
+// INQUIRY = Anfrage der Bank, CHARGEBACK = echte Rückbuchung. „offen" = Antwort nötig / in Prüfung.
+const DISPUTE_OPEN = ["NEEDS_RESPONSE", "UNDER_REVIEW"];
+const DISPUTE_PHASE = {
+  NEEDS_RESPONSE: "Antwort nötig", UNDER_REVIEW: "in Prüfung",
+  ACCEPTED: "akzeptiert", CHARGE_REFUNDED: "erstattet", WON: "gewonnen", LOST: "verloren",
+};
+export function extractDisputes(order, tagCfg = {}) {
+  return (order.disputes || []).map((d) => ({
     orderNumber: order.orderNumber, customer: order.customer, event: order.event,
-    category: categorize(order, requestTags && {}), amountCents: order.totalCents,
-    currency: order.currency, gateway: (order.gateways[0] || "").toLowerCase(), status,
-  };
+    category: categorize(order, tagCfg), amountCents: order.totalCents, currency: order.currency,
+    gateway: (order.gateways[0] || "").toLowerCase(),
+    art: d.initiatedAs === "CHARGEBACK" ? "Rückbuchung" : "Anfrage",
+    phase: DISPUTE_PHASE[d.status] || d.status,
+    status: DISPUTE_OPEN.includes(d.status) ? "offen" : "erledigt",
+    disputeId: d.id,
+  }));
 }
 
 // Verarbeitet eine Liste roher Order-Nodes -> Feed-Teile (rein, testbar).
@@ -110,8 +115,7 @@ export function collectFromOrders(nodes, { tagCfg = {}, since = null } = {}) {
     const ev = extractEvents(o, tagCfg, since);
     cancellations.push(...ev.cancellations);
     refunds.push(...ev.refunds);
-    const req = classifyRequest(o, tagCfg.refundRequest);
-    if (req) { req.category = categorize(o, tagCfg); requests.push(req); }
+    requests.push(...extractDisputes(o, tagCfg)); // offene Rückbuchungen/Disputes
   }
   return { cancellations, refunds, requests };
 }
@@ -129,14 +133,14 @@ query($q: String!, $cursor: String) {
       totalPriceSet { shopMoney { amount currencyCode } }
       lineItems(first: 5) { edges { node { title quantity product { productType tags } } } }
       refunds { id createdAt totalRefundedSet { shopMoney { amount currencyCode } } }
+      disputes { id initiatedAs status }
     } }
   }
 }`;
 
-export async function fetchOrdersSince(domain, token, sinceIso) {
+async function fetchOrdersByQuery(domain, token, q) {
   const host = String(domain).replace(/^https?:\/\//, "").replace(/\/$/, "");
   const url = `https://${host}/admin/api/${API_VERSION}/graphql.json`;
-  const q = `updated_at:>=${sinceIso}`;
   let cursor = null, all = [], guard = 0;
   do {
     const res = await fetch(url, {
@@ -152,4 +156,72 @@ export async function fetchOrdersSince(domain, token, sinceIso) {
     cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
   } while (cursor && ++guard < 50);
   return all;
+}
+
+// Bestellungen seit `sinceIso` (für neue Stornierungen + Rückerstattungen).
+export function fetchOrdersSince(domain, token, sinceIso) {
+  return fetchOrdersByQuery(domain, token, `updated_at:>=${sinceIso}`);
+}
+
+// Alle Bestellungen mit OFFENER Rückbuchung (Dispute) – unabhängig vom Datum,
+// damit auch alte Bestellungen mit neuer Reklamation erscheinen.
+export function fetchOpenDisputeOrders(domain, token) {
+  return fetchOrdersByQuery(domain, token, "chargeback_status:needs_response OR chargeback_status:under_review");
+}
+
+// Alle Bestellungen mit ABGESCHLOSSENER Rückbuchung (für die Gewinn-/Verlust-Quote).
+export function fetchResolvedDisputeOrders(domain, token) {
+  return fetchOrdersByQuery(domain, token,
+    "chargeback_status:won OR chargeback_status:lost OR chargeback_status:accepted OR chargeback_status:charge_refunded");
+}
+
+// Zählt Dispute-Ausgänge über eine Liste von Order-Nodes (rein, testbar).
+// winRate = gewonnen / (gewonnen + verloren) in % (1 Dezimal), null wenn nichts entschieden.
+// Zusätzlich aufgeschlüsselt nach Art: inquiry (Anfrage) vs. chargeback (echte Rückbuchung).
+function newBucket() {
+  return { won: 0, lost: 0, accepted: 0, chargeRefunded: 0, openNeedsResponse: 0, openUnderReview: 0 };
+}
+function countInto(b, status) {
+  if (status === "WON") b.won++;
+  else if (status === "LOST") b.lost++;
+  else if (status === "ACCEPTED") b.accepted++;
+  else if (status === "CHARGE_REFUNDED") b.chargeRefunded++;
+  else if (status === "NEEDS_RESPONSE") b.openNeedsResponse++;
+  else if (status === "UNDER_REVIEW") b.openUnderReview++;
+}
+function finalize(b) {
+  b.decided = b.won + b.lost;
+  b.open = b.openNeedsResponse + b.openUnderReview;
+  b.winRate = b.decided ? Math.round((b.won / b.decided) * 1000) / 10 : null;
+  return b;
+}
+function newGroup() {
+  return { total: newBucket(), inquiry: newBucket(), chargeback: newBucket() };
+}
+function addToGroup(g, d) {
+  countInto(g.total, d.status);
+  countInto(d.initiatedAs === "CHARGEBACK" ? g.chargeback : g.inquiry, d.status);
+}
+function finalizeGroup(g) { finalize(g.total); finalize(g.inquiry); finalize(g.chargeback); return g; }
+
+export function tallyDisputeOutcomes(nodes) {
+  const overall = newGroup();
+  const years = {};
+  const seen = new Set();
+  for (const node of nodes) {
+    if (node.name && seen.has(node.name)) continue;
+    if (node.name) seen.add(node.name);
+    const yr = node.createdAt ? new Date(node.createdAt).getFullYear() : null;
+    for (const d of node.disputes || []) {
+      addToGroup(overall, d);
+      if (yr) { (years[yr] || (years[yr] = newGroup())); addToGroup(years[yr], d); }
+    }
+  }
+  finalizeGroup(overall);
+  const byYear = Object.keys(years).sort().map((y) => {
+    const g = finalizeGroup(years[y]);
+    return { year: Number(y), ...g.total, inquiry: g.inquiry, chargeback: g.chargeback };
+  });
+  // Rückwärtskompatibel: Gesamtzahlen auf Top-Level + Aufschlüsselungen.
+  return { ...overall.total, inquiry: overall.inquiry, chargeback: overall.chargeback, byYear };
 }

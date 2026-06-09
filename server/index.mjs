@@ -24,7 +24,7 @@ import http from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { fetchOrdersSince, collectFromOrders } from "./shopify.mjs";
+import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
 
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || "./data";
@@ -113,18 +113,27 @@ async function syncTenant(t) {
   const since = intg.lastSyncAt || new Date(Date.now() - 90 * DAY).toISOString();
   const token = decToken(intg.shopify.token);
   if (!token) return { skipped: true, reason: "token_unreadable" };
+  // 1) Stornos + Rückerstattungen seit letztem Lauf (Archiv, wird angehängt).
   const nodes = await fetchOrdersSince(intg.shopify.domain, token, since);
   const found = collectFromOrders(nodes, { tagCfg: intg.tags || {}, since: intg.lastSyncAt || null });
+  // 2) Offene Rückbuchungen/Disputes (Live-Snapshot, datumsunabhängig).
+  const disputeNodes = await fetchOpenDisputeOrders(intg.shopify.domain, token);
+  const openDisputes = collectFromOrders(disputeNodes, { tagCfg: intg.tags || {} })
+    .requests.filter((r) => r.status === "offen");
+  // 3) Abgeschlossene Rückbuchungen für die Gewinn-/Verlust-Quote.
+  const resolvedNodes = await fetchResolvedDisputeOrders(intg.shopify.domain, token);
+  const disputeStats = tallyDisputeOutcomes([...disputeNodes, ...resolvedNodes]);
 
   const feed = t.shopifyFeed || { cancellations: [], refunds: [], requests: [] };
   feed.cancellations = mergeById(feed.cancellations, found.cancellations, (c) => c.orderNumber);
   feed.refunds = mergeById(feed.refunds, found.refunds, (r) => `${r.orderNumber}|${r.refundId}`);
-  feed.requests = mergeById(feed.requests, found.requests, (q) => q.orderNumber);
+  feed.requests = openDisputes; // voller Ersatz: gelöste Disputes verschwinden automatisch
+  feed.disputeStats = disputeStats; // Gewinnquote über alle Disputes
   feed.syncedAt = new Date().toISOString();
   t.shopifyFeed = feed;
   t.integration.lastSyncAt = feed.syncedAt;
   await writeTenant(t);
-  return { ok: true, scanned: nodes.length, cancellations: found.cancellations.length, refunds: found.refunds.length, requests: found.requests.length, syncedAt: feed.syncedAt };
+  return { ok: true, scanned: nodes.length, disputesScanned: disputeNodes.length, resolvedScanned: resolvedNodes.length, cancellations: found.cancellations.length, refunds: found.refunds.length, requests: openDisputes.length, winRate: disputeStats.winRate, syncedAt: feed.syncedAt };
 }
 
 async function runAllSyncs() {

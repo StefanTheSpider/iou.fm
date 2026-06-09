@@ -209,7 +209,6 @@ const TAG_FIELDS = [
   ["sportDe", "Sport-Tags (DE)", "sport"],
   ["konzertDe", "Konzert-Tags (DE)", "konzert"],
   ["reisen", "Reisen-Tags", "reisen"],
-  ["refundRequest", "Tag „Rückerstattung angefragt\"", "rückerstattung angefragt"],
   ["at", "Österreich-Tags (optional, Land kommt aus dem Titel)", ""],
 ];
 const splitTags = (s) => String(s || "").split(",").map((t) => t.trim()).filter(Boolean);
@@ -235,7 +234,7 @@ function ShopifySettings({ data, updateData, shopify }) {
     setErr(""); setMsg(""); setBusy("sync");
     try {
       const r = await shopify.syncNow();
-      setMsg(`Abgleich fertig: ${r.cancellations ?? 0} Stornos, ${r.refunds ?? 0} Erstattungen, ${r.requests ?? 0} Anfragen (gescannt: ${r.scanned ?? 0}).`);
+      setMsg(`Abgleich fertig: ${r.cancellations ?? 0} Stornos, ${r.refunds ?? 0} Erstattungen, ${r.requests ?? 0} offene Rückbuchungen${r.winRate != null ? `, Gewinnquote ${r.winRate} %` : ""} (gescannt: ${r.scanned ?? 0} Bestellungen).`);
     } catch (e) { setErr(e.message || "Abgleich fehlgeschlagen."); } finally { setBusy(""); }
   }
 
@@ -243,7 +242,7 @@ function ShopifySettings({ data, updateData, shopify }) {
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Shopify-Anbindung</h2>
       <p className="note">
-        Für den Bestell-Import (Erstattungen) und den nächtlichen Server-Abgleich (Stornos, Rückerstattungen, Anfragen).
+        Für den Bestell-Import (Erstattungen) und den nächtlichen Server-Abgleich (Stornos, Rückerstattungen, offene Rückbuchungen).
         Lege in Shopify eine Custom App mit <strong>nur Lese-Rechten</strong> an (<em>read_orders</em>, ggf. <em>read_all_orders</em>, <em>read_customers</em>) – <strong>keine</strong> Schreibrechte.
         Domain + Token werden lokal (Tresor) gespeichert; für den Nacht-Cron zusätzlich verschlüsselt auf dem Server.
       </p>

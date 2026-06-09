@@ -5,40 +5,96 @@ import { formatEur } from "../lib/money.js";
 const deDate = (iso) => (iso ? new Date(iso).toLocaleDateString("de-DE") : "—");
 const gw = (g) => ({ paypal: "PayPal", klarna: "Klarna", "shopify_payments": "Kreditkarte", bank: "Überweisung" }[g] || (g || "—"));
 
-// ---- Tab: offene Rückerstattungs-Anfragen (für Mitarbeiter) ----------------
+// ---- Tab: offene Rückbuchungen / Zahlungsreklamationen (für Mitarbeiter) ----
+// Quelle: Shopify-Disputes (chargeback_status needs_response / under_review).
 export function Anfragen({ feed, onRefresh, busy }) {
-  const [status, setStatus] = useState("offen");
-  const reqs = (feed?.requests || []).filter((r) => status === "alle" || r.status === status);
+  const [art, setArt] = useState("alle");
+  const reqs = (feed?.requests || []).filter((r) => art === "alle" || r.art === art);
+  const st = feed?.disputeStats;
   return (
     <div>
-      <h1>Rückerstattungs-Anfragen</h1>
-      <p className="sub">Von Kunden angefragte Rückerstattungen (per Tag aus Shopify), z. B. PayPal/Klarna – mit Status. Wird nächtlich abgeglichen.</p>
+      <h1>Offene Rückbuchungen</h1>
+      <p className="sub">Zahlungsreklamationen aus Shopify (Anfrage der Bank bzw. echte Rückbuchung) – diesen müsst ihr fristgerecht <strong>widersprechen</strong>. Live-Snapshot, nächtlich aktualisiert. Gelöste Fälle verschwinden automatisch.</p>
+      {st && (
+        <div className="summary-bar">
+          <div className="stat"><div className="num">{st.open ?? reqs.length}</div><div className="lbl">offen</div></div>
+          <div className="stat"><div className="num" style={{ color: "var(--ok, #3ddc97)" }}>{st.won}</div><div className="lbl">gewonnen</div></div>
+          <div className="stat"><div className="num" style={{ color: "var(--danger, #ff6b6b)" }}>{st.lost}</div><div className="lbl">verloren</div></div>
+          <div className="stat"><div className="num">{st.winRate != null ? st.winRate + " %" : "—"}</div><div className="lbl">Gewinnquote</div></div>
+          {(st.accepted > 0 || st.chargeRefunded > 0) && (
+            <div className="stat"><div className="num">{st.accepted + st.chargeRefunded}</div><div className="lbl">akzeptiert/erstattet</div></div>
+          )}
+        </div>
+      )}
+      {st && (st.inquiry || st.chargeback) && (
+        <p className="note" style={{ marginTop: -4 }}>
+          {st.inquiry && <>Anfragen: {st.inquiry.won} gew. / {st.inquiry.lost} verl.{st.inquiry.winRate != null ? ` (${st.inquiry.winRate} %)` : ""}</>}
+          {st.inquiry && st.chargeback ? "  ·  " : ""}
+          {st.chargeback && <>Rückbuchungen: {st.chargeback.won} gew. / {st.chargeback.lost} verl.{st.chargeback.winRate != null ? ` (${st.chargeback.winRate} %)` : ""}</>}
+        </p>
+      )}
+      {st?.byYear?.length > 0 && (
+        <details style={{ margin: "8px 0 16px" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Historie pro Jahr (gesamte Shop-Laufzeit)</summary>
+          <div className="table-wrap" style={{ marginTop: 8 }}>
+            <table>
+              <thead><tr>
+                <th>Jahr</th><th className="amount">Fälle</th><th className="amount">gewonnen</th><th className="amount">verloren</th>
+                <th className="amount">Quote</th><th className="amount">Anfragen</th><th className="amount">Rückbuchungen</th>
+              </tr></thead>
+              <tbody>
+                {st.byYear.map((y) => (
+                  <tr key={y.year}>
+                    <td className="mono">{y.year}</td>
+                    <td className="amount">{y.decided}</td>
+                    <td className="amount" style={{ color: "var(--ok, #3ddc97)" }}>{y.won}</td>
+                    <td className="amount" style={{ color: "var(--danger, #ff6b6b)" }}>{y.lost}</td>
+                    <td className="amount">{y.winRate != null ? y.winRate + " %" : "—"}</td>
+                    <td className="amount">{y.inquiry?.winRate != null ? y.inquiry.winRate + " %" : "—"}</td>
+                    <td className="amount">{y.chargeback?.winRate != null ? y.chargeback.winRate + " %" : "—"}</td>
+                  </tr>
+                ))}
+                <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border, #333)" }}>
+                  <td>Gesamt</td>
+                  <td className="amount">{st.decided}</td>
+                  <td className="amount" style={{ color: "var(--ok, #3ddc97)" }}>{st.won}</td>
+                  <td className="amount" style={{ color: "var(--danger, #ff6b6b)" }}>{st.lost}</td>
+                  <td className="amount">{st.winRate != null ? st.winRate + " %" : "—"}</td>
+                  <td className="amount">{st.inquiry?.winRate != null ? st.inquiry.winRate + " %" : "—"}</td>
+                  <td className="amount">{st.chargeback?.winRate != null ? st.chargeback.winRate + " %" : "—"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="note" style={{ marginTop: 4 }}>Jahr = Bestelljahr. Quote = gewonnen / (gewonnen + verloren); akzeptierte/erstattete Fälle zählen nicht in die Quote.</p>
+        </details>
+      )}
       <div className="toolbar">
-        <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Status
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="offen">offen</option>
-            <option value="erstattet">erstattet</option>
-            <option value="storniert">storniert</option>
+        <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Art
+          <select value={art} onChange={(e) => setArt(e.target.value)}>
             <option value="alle">alle</option>
+            <option value="Rückbuchung">nur Rückbuchungen</option>
+            <option value="Anfrage">nur Anfragen</option>
           </select>
         </label>
-        <span className="muted">{reqs.length} Anfragen</span>
+        <span className="muted">{reqs.length} offen</span>
         <div className="spacer" />
         {onRefresh && <button className="btn ghost small" onClick={onRefresh} disabled={busy}>{busy ? "Lädt…" : "Aktualisieren"}</button>}
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Bestellnr.</th><th>Kunde</th><th>Veranstaltung</th><th>Zahlart</th><th>Kategorie</th><th className="amount">Betrag</th><th>Status</th></tr></thead>
+          <thead><tr><th>Bestellnr.</th><th>Kunde</th><th>Veranstaltung</th><th>Zahlart</th><th>Art</th><th>Status</th><th className="amount">Betrag</th></tr></thead>
           <tbody>
             {reqs.map((r) => (
-              <tr key={r.orderNumber}>
+              <tr key={r.disputeId || r.orderNumber}>
                 <td className="mono">{r.orderNumber}</td><td>{r.customer}</td><td>{r.event}</td>
-                <td>{gw(r.gateway)}</td><td>{r.category}</td>
+                <td>{gw(r.gateway)}</td>
+                <td><span className={`pill ${r.art === "Rückbuchung" ? "warn" : ""}`}>{r.art}</span></td>
+                <td><span className="pill warn">{r.phase}</span></td>
                 <td className="amount">{formatEur(r.amountCents)}</td>
-                <td><span className={`pill ${r.status === "offen" ? "warn" : "ok"}`}>{r.status}</span></td>
               </tr>
             ))}
-            {reqs.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>Keine Anfragen in dieser Ansicht.</td></tr>}
+            {reqs.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>Keine offenen Rückbuchungen. (Falls erwartet: unter Stammdaten Shopify hinterlegen und „Jetzt abgleichen".)</td></tr>}
           </tbody>
         </table>
       </div>
