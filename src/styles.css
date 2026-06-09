@@ -135,6 +135,15 @@ input.mono { font-family: var(--mono); font-size: 13.5px; letter-spacing: -0.01e
 .link-btn { background: none; border: none; color: var(--accent); font-size: 13.5px; cursor: pointer; padding: 0; text-decoration: underline; }
 .link-btn:hover { color: var(--accent-press); }
 
+/* Festgeschriebenes Feld (nicht editierbar), z. B. Zahlart aus der Bestellung */
+.locked-field {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  background: var(--raised); border: 1px solid var(--border);
+  color: var(--text); font-size: 14px;
+}
+.locked-field .lock-ico { opacity: 0.5; font-size: 12px; }
+
 .update-banner {
   display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
   padding: 10px 16px; background: var(--accent); color: var(--accent-ink);

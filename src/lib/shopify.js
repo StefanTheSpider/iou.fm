@@ -20,6 +20,18 @@ export function deriveEventLabel(title) {
   return parts[0] || "";
 }
 
+// Leitet die Zahlart aus den Shopify-Payment-Gateways ab (festgeschrieben, da Fakt).
+export function methodFromGateways(gateways = []) {
+  const g = (gateways || []).map((x) => String(x).toLowerCase()).join(" ");
+  if (g.includes("paypal")) return "paypal";
+  if (g.includes("klarna")) return "klarna";
+  if (g.includes("gift")) return "gutschein";
+  if (g.includes("shopify_payments") || g.includes("stripe") || g.includes("card") ||
+      g.includes("credit") || g.includes("mollie") || g.includes("adyen") || g.includes("amazon")) return "kreditkarte";
+  // bank / sepa / überweisung / manual / vorkasse -> SEPA
+  return "ueberweisung";
+}
+
 // Parst einen GraphQL-Order-Node in das von der App genutzte Format.
 export function parseOrderNode(node) {
   if (!node) return null;
@@ -45,6 +57,7 @@ export function parseOrderNode(node) {
     currency: money.currencyCode || "EUR",
     eventTitle: title,
     eventShort,
+    method: methodFromGateways(node.paymentGatewayNames),
     suggestedPurpose: `Erstattung ${orderNumber} ${eventShort}`.trim(),
   };
 }
@@ -55,6 +68,7 @@ query($q: String!) {
     edges {
       node {
         name
+        paymentGatewayNames
         customer { displayName }
         billingAddress { name firstName lastName }
         shippingAddress { name }

@@ -56,7 +56,12 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   // Alle Änderungen laufen über data.refunds → der Speichern-Button erscheint.
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
   function patchRow(id, patch) { setRefunds((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r))); }
-  function removeRow(id) { setRefunds((rs) => rs.filter((r) => r.id !== id)); }
+  function removeRow(id) {
+    const r = (data.refunds || []).find((x) => x.id === id);
+    const who = (r && (r.customerName || r.orderNumber)) || "dieser Eintrag";
+    if (!window.confirm(`Eintrag „${who}" wirklich löschen?\n\nDas lässt sich nicht rückgängig machen. Bereits erledigte Zahlungen bleiben im Archiv erhalten.`)) return;
+    setRefunds((rs) => rs.filter((x) => x.id !== id));
+  }
   function addEmpty() { setRefunds((rs) => [emptyRow(isErstattung ? { mode: defMode, feePct: defFee } : { mode: "full" }), ...rs]); }
 
   // IBAN live prüfen, aber Eingabe roh lassen (kein Desync, keine Meldung bei leer).
@@ -74,7 +79,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       const o = await fetchShopifyOrder({ domain: shopify.domain, token: shopify.token, orderNumber: num });
       setRefunds((rs) => [emptyRow({
         mode: defMode, feePct: defFee,
-        row: { orderNumber: o.orderNumber, customerName: o.customerName, paid: (o.totalCents / 100).toFixed(2), currency: o.currency, purpose: o.suggestedPurpose },
+        row: { orderNumber: o.orderNumber, customerName: o.customerName, method: o.method || "ueberweisung", paid: (o.totalCents / 100).toFixed(2), currency: o.currency, purpose: o.suggestedPurpose },
       }), ...rs]);
       setOrderInput("");
     } catch (e) { setError(e.message); } finally { setBusy(false); }
@@ -252,9 +257,9 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
               <div className="refund-grid">
                 {isErstattung && (
                   <label className="f"><span>Zahlart</span>
-                    <select value={r.method} onChange={(e) => patchRow(r.id, { method: e.target.value })}>
-                      {METHODS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                    </select></label>
+                    <div className="locked-field" title="Kommt aus der Bestellung und ist festgeschrieben">
+                      {methodLabel(r.method)} <span className="lock-ico">🔒</span>
+                    </div></label>
                 )}
                 <label className="f"><span>{isErstattung ? "Gezahlt (€)" : "Betrag (€)"}</span>
                   <input className="mono" type="text" value={r.paid} placeholder="0,00"
