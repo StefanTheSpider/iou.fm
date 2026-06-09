@@ -24,6 +24,7 @@ function emptyRow(defaults = {}) {
     id: crypto.randomUUID(),
     orderNumber: "", customerName: "",
     method: "ueberweisung",
+    refundViaSepa: false,         // Karten-/PayPal-Zahlung bewusst per Überweisung erstatten
     art: "erstattung",            // erstattung | storno (für Buchhaltung)
     iban: "", ibanValid: false, ibanReason: "", bic: "",
     paid: "", currency: "EUR",
@@ -90,8 +91,9 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     const value = r.mode === "fixed" ? parseAmount(r.fixed).cents : Number(r.feePct);
     const refund = computeRefund({ paidCents, mode: r.mode, value });
     const isEur = r.currency === "EUR";
-    const sepaEligible = r.method === "ueberweisung" && r.status === "offen" && r.ibanValid && refund.valid && isEur;
-    return { paidCents, refund, isEur, sepaEligible };
+    const sepaMode = r.method === "ueberweisung" || r.refundViaSepa;
+    const sepaEligible = sepaMode && r.status === "offen" && r.ibanValid && refund.valid && isEur;
+    return { paidCents, refund, isEur, sepaMode, sepaEligible };
   }
 
   const computed = rows.map((r) => ({ r, ...calc(r) }));
@@ -214,14 +216,13 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       </div>
 
       <div className="refunds">
-        {visible.map(({ r, refund, isEur, sepaEligible }) => {
-          const isUe = r.method === "ueberweisung";
+        {visible.map(({ r, refund, isEur, sepaMode, sepaEligible }) => {
           const ibanLen = (r.iban || "").replace(/[^0-9A-Za-z]/g, "").length;
-          const showInvalid = isUe && !r.ibanValid && ibanLen >= 15;
+          const showInvalid = sepaMode && !r.ibanValid && ibanLen >= 15;
           return (
             <div key={r.id} className={`refund-card ${showInvalid ? "invalid" : ""} ${r.status === "erledigt" ? "done" : ""}`}>
               <div className="refund-head">
-                {isUe && r.status === "offen" && (
+                {sepaMode && r.status === "offen" && (
                   <input type="checkbox" disabled={!sepaEligible} checked={!!(sepaEligible && r.selected !== false)}
                     onChange={(e) => patchRow(r.id, { selected: e.target.checked })} title="in SEPA-Datei aufnehmen" />
                 )}
@@ -233,6 +234,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                       <input className="ord-input" value={r.orderNumber} placeholder="Best.-Nr."
                         onChange={(e) => patchRow(r.id, { orderNumber: e.target.value })} />
                       <span className="pill">{methodLabel(r.method)}</span>
+                      {r.refundViaSepa && r.method !== "ueberweisung" && <span className="pill warn">→ per Überweisung</span>}
                     </div>
                   )}
                 </div>
@@ -242,13 +244,21 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                   {isErstattung && r.paid && <span className="amt-sub">von {formatEur(parseAmount(r.paid).cents)}</span>}
                 </div>
                 {r.status === "erledigt" ? (
-                  <span className="pill ok">{isUe ? "SEPA erstellt" : (r.art === "storno" ? "storniert" : "erstattet")} · {deDate(r.erledigtAm)}</span>
-                ) : !isUe ? (
+                  <span className="pill ok">{sepaMode ? "SEPA erstellt" : (r.art === "storno" ? "storniert" : "erstattet")} · {deDate(r.erledigtAm)}</span>
+                ) : sepaMode ? (
+                  <div className="inline-edit">
+                    <span className="pill warn">offen</span>
+                    {r.refundViaSepa && r.method !== "ueberweisung" && (
+                      <button className="btn ghost small" title="Doch nicht per Überweisung erstatten" onClick={() => patchRow(r.id, { refundViaSepa: false, selected: false })}>↩︎</button>
+                    )}
+                  </div>
+                ) : (
                   <div className="inline-edit">
                     <button className="btn ghost small" onClick={() => markDone(r.id, "erstattung")}>erstattet</button>
                     <button className="btn ghost small" onClick={() => markDone(r.id, "storno")}>storniert</button>
+                    <button className="btn small" title="Stattdessen per SEPA-Überweisung auf ein Konto zurückzahlen (IBAN nötig)" onClick={() => patchRow(r.id, { refundViaSepa: true, selected: true })}>per Überweisung</button>
                   </div>
-                ) : <span className="pill warn">offen</span>}
+                )}
                 {r.status === "erledigt"
                   ? <button className="btn ghost small" onClick={() => reopen(r.id)} title="wieder öffnen">↺</button>
                   : <button className="btn danger small" onClick={() => removeRow(r.id)}>✕</button>}
@@ -265,7 +275,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                   <input className="mono" type="text" value={r.paid} placeholder="0,00"
                     onChange={(e) => patchRow(r.id, { paid: e.target.value })} />
                   {!isEur && <span className="pill warn">{r.currency} – kein SEPA</span>}</label>
-                {isUe && (
+                {sepaMode && (
                   <label className="f col-wide"><span>IBAN</span>
                     <input className="mono" type="text" value={r.iban} placeholder="DE…"
                       onChange={(e) => onIbanChange(r.id, e.target.value)} />
