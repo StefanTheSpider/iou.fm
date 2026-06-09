@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "iou.fm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.forkandmerge.ioufm",
   "build": {
     "frontendDist": "../dist",
@@ -24,8 +24,15 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/StefanTheSpider/iou.fm/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDMDJEMDU3NTEzREQ4Q0YKUldUUDJEMVJWOUFDM0p3dXRjWFJmeEJja0NHdzdydlZkamg0T0R5UGFmUGJIY0hxUWY0Q3hGWWsK"
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "category": "Finance",
     "publisher": "fork and merge UG",
