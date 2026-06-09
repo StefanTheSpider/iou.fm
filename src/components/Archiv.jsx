@@ -16,6 +16,12 @@ export default function Archiv({ data, canPay = false }) {
   const [fAccount, setFAccount] = useState("alle");
   const [q, setQ] = useState("");
   const [openId, setOpenId] = useState(null);
+  const [dl, setDl] = useState("");
+  function reDownload(b) {
+    downloadXml(b.xml, b.filename);
+    setDl(`✓ „${b.filename}" wurde gespeichert (Ordner „Downloads").`);
+    setTimeout(() => setDl(""), 4000);
+  }
 
   const accountList = useMemo(() => [...new Set(batches.map((b) => b.accountLabel).filter(Boolean))], [batches]);
 
@@ -76,6 +82,8 @@ export default function Archiv({ data, canPay = false }) {
         )}
       </div>
 
+      {dl && <p className="note" style={{ color: "var(--ok, #3ddc97)", margin: "0 0 10px" }}>{dl}</p>}
+
       <div className="table-wrap">
         <table>
           <thead>
@@ -91,7 +99,7 @@ export default function Archiv({ data, canPay = false }) {
                   <td>{b.accountLabel}</td><td>{b.count}</td>
                   <td className="amount">{formatEur(b.sumCents)}</td>
                   <td className="muted">{b.filename}</td>
-                  <td>{canPay && b.xml && <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); downloadXml(b.xml, b.filename); }}>erneut laden</button>}</td>
+                  <td>{canPay && b.xml && <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); reDownload(b); }}>erneut laden</button>}</td>
                 </tr>
                 {openId === b.id && (b.payments || []).map((p, i) => (
                   <tr key={b.id + "-" + i} style={{ background: "var(--bg)" }}>

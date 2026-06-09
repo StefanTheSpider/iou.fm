@@ -53,6 +53,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [fMethod, setFMethod] = useState("alle");
   const [fStatus, setFStatus] = useState("offen");
   const [showModal, setShowModal] = useState(false);
+  const [saved, setSaved] = useState("");
 
   // Alle Änderungen laufen über data.refunds → der Speichern-Button erscheint.
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
@@ -144,6 +145,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     }), true);
     setShowModal(false);
     setError("");
+    setSaved(`✓ „${filename}" wurde gespeichert (Ordner „Downloads"). ${payments.length} Zahlung${payments.length === 1 ? "" : "en"}, Summe ${formatEur(sumEligible)}. Liegt auch im Archiv.`);
   }
 
   const offenCount = computed.filter((c) => c.sepaEligible).length;
@@ -181,6 +183,11 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
           )}
         </div>
         {error && <p className="error-text" style={{ margin: "8px 0 0" }}>{error}</p>}
+        {saved && (
+          <p className="note" style={{ margin: "8px 0 0", color: "var(--ok, #3ddc97)" }}>
+            {saved} <button className="link-btn" onClick={() => setSaved("")}>ausblenden</button>
+          </p>
+        )}
       </div>
 
       <div className="summary-bar">
