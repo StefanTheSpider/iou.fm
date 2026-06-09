@@ -1,6 +1,7 @@
-# iou.fm – Release-Pipeline. Baut signierte/notarisierte macOS-.dmg + Windows-Installer,
-# erzeugt Updater-Artefakte (latest.json) und veröffentlicht sie als GitHub Release.
-# Auslösen: Tag pushen, z. B.  git tag v0.1.1 && git push origin v0.1.1
+# iou.fm – Release-Pipeline (Multi-Plattform, EIN Release mit zusammengeführter latest.json).
+# Ablauf: 1) Release-Entwurf anlegen  2) Mac + Windows bauen & in DENSELBEN Release laden
+#         3) Release automatisch veröffentlichen.
+# Auslösen: git tag v0.1.x && git push origin v0.1.x
 name: release
 on:
   push:
@@ -8,7 +9,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+    steps:
+      - uses: actions/github-script@v7
+        id: create
+        with:
+          result-encoding: string
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `iou.fm ${tag}`,
+              body: 'Automatisch gebaut. Auto-Update zieht diese Version.',
+              draft: true,
+              prerelease: false,
+            });
+            return data.id;
+
   build:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -22,30 +48,21 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Node einrichten
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Rust einrichten
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
       - name: Abhängigkeiten installieren
         run: npm ci
-
-      - name: Bauen, signieren, veröffentlichen
+      - name: Bauen & in den Release laden
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # --- Auto-Update-Signatur (Pflicht für Updater-Artefakte) ---
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # --- macOS Apple-Signierung: erst aktivieren, wenn ein Apple Developer
-          #     Account + Zertifikat vorhanden ist (sonst schlägt der Zertifikats-Import fehl).
-          #     Dann diese Zeilen einkommentieren und die Secrets hinterlegen:
+          # macOS Apple-Signing später (Secrets hinterlegen + einkommentieren):
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -53,10 +70,22 @@ jobs:
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "iou.fm ${{ github.ref_name }}"
-          releaseBody: "Automatisch gebaut. Auto-Update zieht diese Version."
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: true
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
+
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false,
+              make_latest: 'true',
+            });
