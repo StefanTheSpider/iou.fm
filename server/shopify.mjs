@@ -91,18 +91,25 @@ export function extractEvents(order, tagCfg, since) {
 // Zahlungsreklamationen / Rückbuchungen (Disputes) aus Shopify.
 // INQUIRY = Anfrage der Bank, CHARGEBACK = echte Rückbuchung. „offen" = Antwort nötig / in Prüfung.
 const DISPUTE_OPEN = ["NEEDS_RESPONSE", "UNDER_REVIEW"];
+const DISPUTE_TERMINAL = ["WON", "LOST", "ACCEPTED", "CHARGE_REFUNDED"];
 const DISPUTE_PHASE = {
   NEEDS_RESPONSE: "Antwort nötig", UNDER_REVIEW: "in Prüfung",
   ACCEPTED: "akzeptiert", CHARGE_REFUNDED: "erstattet", WON: "gewonnen", LOST: "verloren",
 };
+// Hat die Bestellung einen bereits abgeschlossenen Dispute? Dann gilt sie als entschieden –
+// eine parallel noch auf "in Prüfung" stehende Anfrage ist nur ein Lebenszyklus-Rest.
+const hasResolvedDispute = (order) => (order.disputes || []).some((d) => DISPUTE_TERMINAL.includes(d.status));
+
 export function extractDisputes(order, tagCfg = {}) {
+  const resolved = hasResolvedDispute(order);
   return (order.disputes || []).map((d) => ({
     orderNumber: order.orderNumber, customer: order.customer, event: order.event,
     category: categorize(order, tagCfg), amountCents: order.totalCents, currency: order.currency,
     gateway: (order.gateways[0] || "").toLowerCase(),
     art: d.initiatedAs === "CHARGEBACK" ? "Rückbuchung" : "Anfrage",
     phase: DISPUTE_PHASE[d.status] || d.status,
-    status: DISPUTE_OPEN.includes(d.status) ? "offen" : "erledigt",
+    // Offen nur, wenn der Dispute offen ist UND die Bestellung nicht schon entschieden wurde.
+    status: DISPUTE_OPEN.includes(d.status) && !resolved ? "offen" : "erledigt",
     disputeId: d.id,
   }));
 }
@@ -181,13 +188,13 @@ export function fetchResolvedDisputeOrders(domain, token) {
 function newBucket() {
   return { won: 0, lost: 0, accepted: 0, chargeRefunded: 0, openNeedsResponse: 0, openUnderReview: 0 };
 }
-function countInto(b, status) {
+function countInto(b, status, countOpen = true) {
   if (status === "WON") b.won++;
   else if (status === "LOST") b.lost++;
   else if (status === "ACCEPTED") b.accepted++;
   else if (status === "CHARGE_REFUNDED") b.chargeRefunded++;
-  else if (status === "NEEDS_RESPONSE") b.openNeedsResponse++;
-  else if (status === "UNDER_REVIEW") b.openUnderReview++;
+  else if (status === "NEEDS_RESPONSE") { if (countOpen) b.openNeedsResponse++; }
+  else if (status === "UNDER_REVIEW") { if (countOpen) b.openUnderReview++; }
 }
 function finalize(b) {
   b.decided = b.won + b.lost;
@@ -198,9 +205,9 @@ function finalize(b) {
 function newGroup() {
   return { total: newBucket(), inquiry: newBucket(), chargeback: newBucket() };
 }
-function addToGroup(g, d) {
-  countInto(g.total, d.status);
-  countInto(d.initiatedAs === "CHARGEBACK" ? g.chargeback : g.inquiry, d.status);
+function addToGroup(g, d, countOpen = true) {
+  countInto(g.total, d.status, countOpen);
+  countInto(d.initiatedAs === "CHARGEBACK" ? g.chargeback : g.inquiry, d.status, countOpen);
 }
 function finalizeGroup(g) { finalize(g.total); finalize(g.inquiry); finalize(g.chargeback); return g; }
 
@@ -212,9 +219,11 @@ export function tallyDisputeOutcomes(nodes) {
     if (node.name && seen.has(node.name)) continue;
     if (node.name) seen.add(node.name);
     const yr = node.createdAt ? new Date(node.createdAt).getFullYear() : null;
+    // Offene Disputes nur zählen, wenn die Bestellung nicht schon entschieden ist.
+    const countOpen = !hasResolvedDispute(node);
     for (const d of node.disputes || []) {
-      addToGroup(overall, d);
-      if (yr) { (years[yr] || (years[yr] = newGroup())); addToGroup(years[yr], d); }
+      addToGroup(overall, d, countOpen);
+      if (yr) { (years[yr] || (years[yr] = newGroup())); addToGroup(years[yr], d, countOpen); }
     }
   }
   finalizeGroup(overall);

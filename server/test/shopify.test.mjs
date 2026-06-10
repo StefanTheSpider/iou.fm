@@ -49,9 +49,12 @@ ok(dChargeback[0].status === "offen" && dChargeback[0].art === "Rückbuchung" &&
 const dLost = extractDisputes(normalizeOrder(node({ name: "#14", disputes: [{ initiatedAs: "CHARGEBACK", status: "LOST" }] })), TAGS);
 ok(dLost[0].status === "erledigt" && dLost[0].phase === "verloren", "Dispute: LOST -> erledigt");
 ok(extractDisputes(normalizeOrder(node({ name: "#15", tags: ["Sport"] })), TAGS).length === 0, "ohne Dispute -> keine Anfrage");
-// Mehrere Disputes je Order (z.B. alter LOST + neuer offener)
+// Entschiedene Order: LOST-Chargeback + parallele Inquiry "in Prüfung" -> NICHT offen
 const dMulti = extractDisputes(normalizeOrder(node({ name: "#16", disputes: [{ initiatedAs: "CHARGEBACK", status: "LOST" }, { initiatedAs: "INQUIRY", status: "UNDER_REVIEW" }] })), TAGS);
-ok(dMulti.length === 2 && dMulti.filter((d) => d.status === "offen").length === 1, "Dispute: zwei je Order, einer offen");
+ok(dMulti.length === 2 && dMulti.filter((d) => d.status === "offen").length === 0, "Dispute: entschiedene Order -> übrige Anfrage nicht offen");
+// Echte offene Order (nur UNDER_REVIEW, kein Abschluss) bleibt offen
+const dStillOpen = extractDisputes(normalizeOrder(node({ name: "#17b", disputes: [{ initiatedAs: "CHARGEBACK", status: "UNDER_REVIEW" }] })), TAGS);
+ok(dStillOpen[0].status === "offen", "Dispute: nicht entschieden -> bleibt offen");
 
 // Gewinn-/Verlust-Quote
 const stats = tallyDisputeOutcomes([
