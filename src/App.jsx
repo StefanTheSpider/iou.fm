@@ -31,6 +31,11 @@ export default function App() {
 
   useEffect(() => { sessionRef.current = session; }, [session]);
 
+  // Löhne sind streng Admin-only: Mitarbeiter niemals auf dem Lohn-Tab landen lassen.
+  useEffect(() => {
+    if (session && session.currentUser.role !== "admin" && tab === "lohn") setTab("erstattung");
+  }, [session, tab]);
+
   // Beim Start auf neue Version prüfen (nur Desktop-App; sonst still).
   useEffect(() => { checkForUpdate().then((u) => { if (u) setUpdate(u); }); }, []);
 
@@ -215,7 +220,7 @@ export default function App() {
         <div className="brand"><Brand /></div>
         {setupDone && (
           <nav className="tabs">
-            <button className={`tab ${tab === "lohn" ? "active" : ""}`} onClick={() => setTab("lohn")}>Löhne</button>
+            {isAdmin && <button className={`tab ${tab === "lohn" ? "active" : ""}`} onClick={() => setTab("lohn")}>Löhne</button>}
             <button className={`tab ${tab === "erstattung" ? "active" : ""}`} onClick={() => setTab("erstattung")}>{payoutLabel}</button>
             {rechnungOn && <button className={`tab ${tab === "rechnung" ? "active" : ""}`} onClick={() => setTab("rechnung")}>Rechnungsprüfung</button>}
             <button className={`tab ${tab === "anfragen" ? "active" : ""}`} onClick={() => setTab("anfragen")}>Rückbuchungen</button>
@@ -243,7 +248,7 @@ export default function App() {
           )
         ) : (
           <>
-            {tab === "lohn" && <Lohn data={data} updateData={updateData} canPay={isAdmin} />}
+            {tab === "lohn" && isAdmin && <Lohn data={data} updateData={updateData} canPay={isAdmin} />}
             {tab === "erstattung" && <Erstattungen data={data} updateData={updateData} profile={payoutMode} canPay={isAdmin} feed={feed} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={updateData} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}

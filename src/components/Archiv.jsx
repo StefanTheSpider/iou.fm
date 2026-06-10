@@ -9,7 +9,8 @@ const deDate = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—
 // mit Filtern + Export für die Buchhaltung (DATEV / CSV). Mitarbeiter sehen nur,
 // was wann überwiesen wurde; Export & erneuter Download sind Admin-Aktionen.
 export default function Archiv({ data, canPay = false }) {
-  const batches = data.batches || [];
+  // Löhne tauchen NIE im Archiv auf – für niemanden (auch nicht für Admins).
+  const batches = (data.batches || []).filter((b) => b.kind !== "lohn");
   const [fType, setFType] = useState("alle");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -50,7 +51,6 @@ export default function Archiv({ data, canPay = false }) {
           <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Typ
             <select value={fType} onChange={(e) => setFType(e.target.value)}>
               <option value="alle">alle</option>
-              <option value="lohn">Lohn/Gehalt</option>
               <option value="erstattung">Erstattungen</option>
               <option value="sammel">Sammelüberweisung</option>
             </select>
