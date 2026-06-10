@@ -292,3 +292,20 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent);
   border-radius: 8px; padding: 5px 12px; font-size: 12px; cursor: pointer;
 }
 .owner-reset:disabled { opacity: .4; cursor: default; }
+
+/* ===== Support-Zugang ===== */
+.support-banner {
+  background: linear-gradient(90deg, rgba(255,77,77,.22), rgba(255,77,77,.08));
+  border-bottom: 1px solid rgba(255,77,77,.6);
+  color: #ff9a9a; font-size: 13px; font-weight: 700;
+  padding: 8px 18px; text-align: center;
+}
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; z-index: 70; padding: 20px;
+}
+.modal-card {
+  width: 520px; max-width: 92vw; max-height: 86vh; overflow: auto;
+  background: var(--panel, #161b22); border: 1px solid var(--border-strong);
+  border-radius: 16px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.55);
+}

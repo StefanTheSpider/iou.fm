@@ -9,6 +9,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "hub-"));
 process.env.PORT = String(PORT);
 process.env.DATA_DIR = tmp;
+process.env.SUPPORT_KEY = "test-support-key";
 
 const { server } = await import("../index.mjs");
 await new Promise((r) => setTimeout(r, 150));
@@ -18,6 +19,11 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.error("  ✗ " + m)
 const J = (r) => r.json();
 const post = (p, b, key) => fetch(`${BASE}${p}`, {
   method: "POST",
+  headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+  body: JSON.stringify(b),
+});
+const put = (p, b, key) => fetch(`${BASE}${p}`, {
+  method: "PUT",
   headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
   body: JSON.stringify(b),
 });
@@ -117,6 +123,48 @@ try {
 
   r = await fetch(`${BASE}/health`); b = await J(r);
   ok(b.users === 2, "health: Benutzerzahl aktualisiert (stefan + olduser)");
+
+  // --- Support-Zugang (Vendor <-> Kunde) ---
+  const SK = "test-support-key";
+  // Vendor lädt Public-Key hoch, Kunde kann ihn öffentlich abrufen
+  r = await put("/api/support/pubkey", { pubKeyJwk: { kty: "RSA", n: "demo" } }, SK);
+  ok(r.status === 200, "support: Vendor lädt Public-Key hoch");
+  r = await put("/api/support/pubkey", { pubKeyJwk: { kty: "RSA", n: "x" } }, "falsch");
+  ok(r.status === 401, "support: falscher SUPPORT_KEY -> 401");
+  r = await fetch(`${BASE}/api/support/pubkey`); b = await J(r);
+  ok(r.status === 200 && b.pubKeyJwk?.n === "demo", "support: Public-Key öffentlich abrufbar");
+
+  // Vendor stellt Anfrage an stefans Mandanten
+  r = await post("/api/support/request", { tenantId, scope: "full", note: "Hilfe", expiresAt: new Date(Date.now() + 3600e3).toISOString() }, SK);
+  b = await J(r);
+  ok(r.status === 201 && b.requestId, "support: Vendor stellt Anfrage");
+  const reqId = b.requestId;
+  r = await post("/api/support/request", { tenantId, scope: "full" }, "falsch");
+  ok(r.status === 401, "support: Anfrage ohne SUPPORT_KEY -> 401");
+
+  // Kunde sieht die Anfrage (mit accessKey)
+  r = await fetch(`${BASE}/api/tenants/${tenantId}/support-requests`, { headers: { Authorization: `Bearer ${accessKey}` } });
+  b = await J(r);
+  ok(r.status === 200 && b.requests.length === 1 && b.requests[0].id === reqId, "support: Kunde sieht offene Anfrage");
+  r = await fetch(`${BASE}/api/tenants/${tenantId}/support-requests`, { headers: { Authorization: "Bearer falsch" } });
+  ok(r.status === 401, "support: Anfragen nur mit Mandanten-Key");
+
+  // Kunde gibt frei (liefert wrappedDek)
+  r = await post(`/api/tenants/${tenantId}/support-grant`, { requestId: reqId, wrappedDek: "DEK_FUER_VENDOR", expiresAt: new Date(Date.now() + 3600e3).toISOString() }, accessKey);
+  ok(r.status === 200, "support: Kunde gibt Zugang frei");
+
+  // Vendor sieht aktiven Grant inkl. accessKey + wrappedDek
+  r = await fetch(`${BASE}/api/support/grants`, { headers: { Authorization: `Bearer ${SK}` } }); b = await J(r);
+  const g = (b.grants || []).find((x) => x.tenantId === tenantId);
+  ok(r.status === 200 && g && g.wrappedDek === "DEK_FUER_VENDOR" && g.accessKey === accessKey && g.scope === "full", "support: Vendor erhält Grant + Schlüssel");
+  r = await fetch(`${BASE}/api/support/grants`, { headers: { Authorization: "Bearer falsch" } });
+  ok(r.status === 401, "support: Grants nur mit SUPPORT_KEY");
+
+  // Kunde widerruft -> Grant verschwindet beim Vendor
+  r = await post(`/api/tenants/${tenantId}/support-revoke`, { grantId: g.grantId }, accessKey);
+  ok(r.status === 200, "support: Kunde widerruft");
+  r = await fetch(`${BASE}/api/support/grants`, { headers: { Authorization: `Bearer ${SK}` } }); b = await J(r);
+  ok(!(b.grants || []).some((x) => x.tenantId === tenantId), "support: widerrufener Grant ist weg");
 } finally {
   server.close();
   await fs.rm(tmp, { recursive: true, force: true });

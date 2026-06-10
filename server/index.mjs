@@ -46,6 +46,16 @@ const eq = (a, b) => {
 // gespeichert (nur für lokale Entwicklung) – auf Railway HUB_SECRET setzen!
 const HUB_SECRET = process.env.HUB_SECRET || "";
 const TOK_KEY = HUB_SECRET ? crypto.createHash("sha256").update(HUB_SECRET).digest() : null;
+
+// --- Support-Zugang (Anbieter/Vendor) ---------------------------------------
+// SUPPORT_KEY ist das Vendor-Credential (nur fork-and-merge kennt es). Die
+// Kundendaten bleiben E2E-verschlüsselt: der Vendor sieht nur, was der Kunde
+// per wrappedDek (für den Support-Public-Key) explizit & befristet freigibt.
+const SUPPORT_KEY = process.env.SUPPORT_KEY || "";
+const SUPPORT_FILE = path.join(DATA_DIR, "support.json");
+const supportAuth = (req) => !!SUPPORT_KEY && eq(bearer(req), SUPPORT_KEY);
+const now = () => Date.now();
+const notExpired = (g) => !g.expiresAt || new Date(g.expiresAt).getTime() > now();
 function encToken(plain) {
   if (!plain) return "";
   if (!TOK_KEY) return plain;
@@ -417,6 +427,97 @@ const server = http.createServer(async (req, res) => {
         });
       }
       return send(res, 405, { error: "method_not_allowed" });
+    }
+
+    // ===== SUPPORT-ZUGANG =====================================================
+    // Vendor-Seite (Bearer = SUPPORT_KEY)
+    if (parts[0] === "api" && parts[1] === "support" && parts[2] === "pubkey") {
+      if (req.method === "GET") { // öffentlich: Kunden brauchen den Public-Key zum Verschlüsseln
+        const s = await readJson(SUPPORT_FILE);
+        return send(res, 200, { pubKeyJwk: s?.pubKeyJwk || null });
+      }
+      if (req.method === "PUT") {
+        if (!supportAuth(req)) return send(res, 401, { error: "unauthorized" });
+        const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+        if (!b.pubKeyJwk) return send(res, 400, { error: "missing_pubkey" });
+        await writeJson(SUPPORT_FILE, { pubKeyJwk: b.pubKeyJwk, updatedAt: new Date().toISOString() });
+        return send(res, 200, { ok: true });
+      }
+      return send(res, 405, { error: "method_not_allowed" });
+    }
+
+    // Vendor stellt Zugriffsanfrage an einen Mandanten
+    if (parts[0] === "api" && parts[1] === "support" && parts[2] === "request" && req.method === "POST") {
+      if (!supportAuth(req)) return send(res, 401, { error: "unauthorized" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      if (!validId(b.tenantId)) return send(res, 400, { error: "bad_tenant" });
+      const t = await readTenant(b.tenantId);
+      if (!t) return send(res, 404, { error: "tenant_not_found" });
+      const reqId = newId();
+      t.supportRequests = (t.supportRequests || []).filter((r) => r.status === "pending" ? notExpired(r) : false);
+      t.supportRequests.push({
+        id: reqId, scope: b.scope === "read" ? "read" : "full",
+        note: String(b.note || "").slice(0, 200),
+        expiresAt: b.expiresAt || null, createdAt: new Date().toISOString(), status: "pending",
+      });
+      await writeTenant(t);
+      return send(res, 201, { requestId: reqId });
+    }
+
+    // Vendor listet aktive Grants (über alle Mandanten)
+    if (parts[0] === "api" && parts[1] === "support" && parts[2] === "grants" && req.method === "GET") {
+      if (!supportAuth(req)) return send(res, 401, { error: "unauthorized" });
+      let files = [];
+      try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch {}
+      const grants = [];
+      for (const f of files) {
+        const t = await readJson(path.join(TENANT_DIR, f));
+        for (const g of (t?.supportGrants || [])) {
+          if (g.status === "granted" && notExpired(g)) {
+            grants.push({ tenantId: t.tenantId, company: t.company || "", accessKey: t.accessKey,
+              grantId: g.id, scope: g.scope, wrappedDek: g.wrappedDek, expiresAt: g.expiresAt });
+          }
+        }
+      }
+      return send(res, 200, { grants });
+    }
+
+    // Kunden-Seite (Bearer = Mandanten-accessKey): Anfragen sehen / freigeben / widerrufen
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "support-requests" && req.method === "GET") {
+      const t = await readTenant(parts[2]);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const pending = (t.supportRequests || []).filter((r) => r.status === "pending" && notExpired(r));
+      const active = (t.supportGrants || []).filter((g) => g.status === "granted" && notExpired(g))
+        .map((g) => ({ grantId: g.id, scope: g.scope, expiresAt: g.expiresAt, grantedAt: g.grantedAt }));
+      return send(res, 200, { requests: pending, grants: active });
+    }
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "support-grant" && req.method === "POST") {
+      const t = await readTenant(parts[2]);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const reqRec = (t.supportRequests || []).find((r) => r.id === b.requestId && r.status === "pending");
+      if (!reqRec) return send(res, 404, { error: "request_not_found" });
+      if (!b.wrappedDek) return send(res, 400, { error: "missing_wrapped" });
+      reqRec.status = "granted";
+      t.supportGrants = (t.supportGrants || []);
+      t.supportGrants.push({
+        id: newId(), requestId: reqRec.id, scope: reqRec.scope, wrappedDek: b.wrappedDek,
+        expiresAt: b.expiresAt || reqRec.expiresAt || null, grantedAt: new Date().toISOString(), status: "granted",
+      });
+      await writeTenant(t);
+      return send(res, 200, { ok: true });
+    }
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "support-revoke" && req.method === "POST") {
+      const t = await readTenant(parts[2]);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      t.supportGrants = (t.supportGrants || []).map((g) =>
+        (!b.grantId || g.id === b.grantId) ? { ...g, status: "revoked" } : g);
+      await writeTenant(t);
+      return send(res, 200, { ok: true });
     }
 
     return send(res, 404, { error: "not_found" });

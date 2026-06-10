@@ -13,6 +13,8 @@ import { checkForUpdate } from "./lib/update.js";
 import { getFeed, triggerSync, saveIntegration, getIntegration } from "./lib/feed.js";
 import { Anfragen, Stornos } from "./components/ShopifyTabs.jsx";
 import OwnerPanel from "./components/OwnerPanel.jsx";
+import { SupportApprovalModal, VendorSupport } from "./components/Support.jsx";
+import { customerStatus } from "./lib/support.js";
 import { DEMO_DATA } from "./lib/demoData.js";
 import BRANDING from "./branding.js";
 import { applyTheme } from "./lib/theme.js";
@@ -29,6 +31,8 @@ export default function App() {
   const [feed, setFeed] = useState(null);       // Shopify-Feed vom Hub (Stornos/Refunds/Anfragen)
   const [feedBusy, setFeedBusy] = useState(false);
   const [ownerView, setOwnerView] = useState({ asUser: false, payout: null, rechnung: null, demo: false });
+  const [supportStatus, setSupportStatus] = useState(null); // Kunde: offene Support-Anfragen
+  const [showApproval, setShowApproval] = useState(false);
   const sessionRef = useRef(null);
   const savedTimer = useRef(null);
 
@@ -44,7 +48,7 @@ export default function App() {
 
   useEffect(() => {
     restoreSession().then((s) => {
-      if (s) { setSession(s); sessionRef.current = s; if (s.tenantId) { pullQuiet(); refreshFeed(); } }
+      if (s) { setSession(s); sessionRef.current = s; if (s.tenantId) { pullQuiet(); refreshFeed(); refreshSupport(); } }
     }).finally(() => setRestoring(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -106,6 +110,29 @@ export default function App() {
     catch (e) { console.warn("Feed laden fehlgeschlagen:", e.message); }
     finally { setFeedBusy(false); }
   }, []);
+
+  // Kunde: prüfen, ob der Support Zugang angefragt hat (nicht in Support-Sitzungen).
+  const refreshSupport = useCallback(async () => {
+    const s = sessionRef.current;
+    if (!s?.tenantId || s.currentUser?.support) return;
+    try {
+      const st = await customerStatus(s);
+      setSupportStatus(st);
+      if ((st.requests || []).length > 0) setShowApproval(true);
+    } catch { /* offline egal */ }
+  }, []);
+
+  // Vendor: Support-Sitzung betreten/verlassen.
+  const enterSupport = useCallback((supportSession) => {
+    setSession(supportSession); sessionRef.current = supportSession;
+    setFeed(null); setSupportStatus(null); setShowApproval(false); setTab("erstattung");
+  }, []);
+  const exitSupport = useCallback(async () => {
+    const real = await restoreSession();
+    if (real) { setSession(real); sessionRef.current = real; setTab("erstattung"); if (real.tenantId) { refreshFeed(); } }
+    else { lock(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshFeed]);
 
   // Auto-Pull: aktuellen Cloud-Stand automatisch holen, wenn das Fenster wieder
   // in den Fokus kommt und alle 60 s – aber nur, wenn nichts Ungespeichertes
@@ -170,8 +197,8 @@ export default function App() {
   // Nach dem Anmelden den aktuellen Cloud-Stand + Shopify-Feed holen.
   const onUnlock = useCallback((s) => {
     setSession(s); sessionRef.current = s;
-    if (s.tenantId) { pullQuiet(); refreshFeed(); }
-  }, [pullQuiet, refreshFeed]);
+    if (s.tenantId) { pullQuiet(); refreshFeed(); refreshSupport(); }
+  }, [pullQuiet, refreshFeed, refreshSupport]);
 
   // Status/Manueller Refresh für die Stammdaten-Oberfläche (Sync läuft automatisch).
   const sync = useMemo(() => ({
@@ -208,6 +235,7 @@ export default function App() {
 
   // Owner-Modus: live zwischen Modi umschalten (reine Vorschau, ändert nichts Echtes).
   const isOwner = session.currentUser.owner === true;
+  const inSupport = session.currentUser.support === true; // Vendor in fremdem Kundenkonto
   const ov = isOwner ? ownerView : { asUser: false, payout: null, rechnung: null, demo: false };
   const demoMode = !!ov.demo;
   const data = demoMode ? DEMO_DATA : session.data;
@@ -235,6 +263,7 @@ export default function App() {
             <button className={`tab ${tab === "stornos" ? "active" : ""}`} onClick={() => setTab("stornos")}>Stornos</button>
             <button className={`tab ${tab === "archiv" ? "active" : ""}`} onClick={() => setTab("archiv")}>Archiv</button>
             {isAdmin && <button className={`tab ${tab === "stammdaten" ? "active" : ""}`} onClick={() => setTab("stammdaten")}>Stammdaten</button>}
+            {isOwner && <button className={`tab ${tab === "support" ? "active" : ""}`} onClick={() => setTab("support")}>Support</button>}
           </nav>
         )}
         <div className="spacer" />
@@ -243,6 +272,14 @@ export default function App() {
         <span className="user-chip">{session.currentUser.username}{session.currentUser.role === "admin" ? " · Admin" : ""}</span>
         <button className="lock-btn" onClick={lock}>🔒 Abmelden</button>
       </header>
+
+      {inSupport && (
+        <div className="support-banner">
+          ⚠ SUPPORT-SITZUNG im Kundenkonto „{session.company || session.tenantId}"
+          {session.supportGrant?.expiresAt ? ` · gültig bis ${new Date(session.supportGrant.expiresAt).toLocaleString("de-DE")}` : ""}
+          <button className="btn small" style={{ marginLeft: 12 }} onClick={exitSupport}>Sitzung beenden</button>
+        </div>
+      )}
 
       {isOwner && (ov.asUser || ov.payout || ov.rechnung != null || ov.demo) && (
         <div className="owner-banner">
@@ -274,14 +311,19 @@ export default function App() {
               <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
+            {tab === "support" && isOwner && <VendorSupport onOpenSession={enterSupport} />}
           </>
         )}
       </main>
 
-      {isOwner && (
+      {isOwner && !inSupport && (
         <OwnerPanel view={ownerView} setView={setOwnerView}
           payoutMode={session.data.config?.payoutMode || "erstattung"}
           rechnungOn={!!session.data.config?.modules?.rechnung} />
+      )}
+      {showApproval && !inSupport && supportStatus && (
+        <SupportApprovalModal session={session} status={supportStatus}
+          onClose={() => setShowApproval(false)} onChanged={refreshSupport} />
       )}
       <Footer branding={branding} />
     </div>
