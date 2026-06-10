@@ -128,13 +128,13 @@ async function persistSession(session) {
   const raw = await crypto.subtle.exportKey("raw", session.dek);
   sessionStorage.setItem(SESSION_KEY, JSON.stringify({
     dek: b64(raw), tenantId: session.tenantId, accessKey: session.accessKey,
-    username: session.currentUser.username, role: session.currentUser.role,
+    username: session.currentUser.username, role: session.currentUser.role, owner: !!session.currentUser.owner,
     authHash: session.authHash, company: session.company || "",
   }));
 }
 
-async function buildSession({ tenantId, accessKey, role, username, authHash, dek }) {
-  const session = { dek, tenantId, accessKey, authHash, company: "", currentUser: { username, role }, users: [{ username, role }], data: { ...DEFAULT_DATA } };
+async function buildSession({ tenantId, accessKey, role, owner = false, username, authHash, dek }) {
+  const session = { dek, tenantId, accessKey, authHash, company: "", currentUser: { username, role, owner: !!owner }, users: [{ username, role }], data: { ...DEFAULT_DATA } };
   // Geteilten Stand vom Hub holen …
   let shared = null;
   try {
@@ -163,8 +163,8 @@ export async function register(username, password, company = "") {
   const r = await postJson("/api/auth/register", { username: username.trim(), salt: b64(salt), authHash, wrappedDek, company: company.trim() });
   if (r.status === 409) throw new Error("Benutzername ist bereits vergeben.");
   if (!r.ok) throw new Error("Registrierung fehlgeschlagen.");
-  const { tenantId, accessKey, role } = await r.json();
-  return buildSession({ tenantId, accessKey, role, username: username.trim(), authHash, dek: dekKey });
+  const { tenantId, accessKey, role, owner } = await r.json();
+  return buildSession({ tenantId, accessKey, role, owner, username: username.trim(), authHash, dek: dekKey });
 }
 
 export async function login(username, password) {
@@ -182,12 +182,12 @@ async function doLogin(username, password, allowMigrate) {
   const r = await postJson("/api/auth/login", { username, authHash });
   if (r.status === 401) throw new Error("Falsches Passwort.");
   if (!r.ok) throw new Error("Anmeldung fehlgeschlagen.");
-  const { tenantId, accessKey, wrappedDek, role } = await r.json();
+  const { tenantId, accessKey, wrappedDek, role, owner } = await r.json();
   let rawDek;
   try { rawDek = await unwrap(vaultKey, wrappedDek); }
   catch { throw new Error("Schlüssel passt nicht (Passwort?)."); }
   const dekKey = await importDek(rawDek);
-  return buildSession({ tenantId, accessKey, role, username, authHash, dek: dekKey });
+  return buildSession({ tenantId, accessKey, role, owner, username, authHash, dek: dekKey });
 }
 
 // Migration: alten lokalen Tresor (sepa2_vault_v2) erkennen, mit dem Passwort
@@ -224,7 +224,7 @@ export async function restoreSession() {
   try {
     const s = JSON.parse(raw);
     const dek = await importDek(unb64(s.dek));
-    const session = { dek, tenantId: s.tenantId, accessKey: s.accessKey, authHash: s.authHash, company: s.company || "", currentUser: { username: s.username, role: s.role }, users: [{ username: s.username, role: s.role }], data: { ...DEFAULT_DATA } };
+    const session = { dek, tenantId: s.tenantId, accessKey: s.accessKey, authHash: s.authHash, company: s.company || "", currentUser: { username: s.username, role: s.role, owner: !!s.owner }, users: [{ username: s.username, role: s.role }], data: { ...DEFAULT_DATA } };
     const cached = await loadCache(session);
     session.data = cached || { ...DEFAULT_DATA };
     if (s.role === "admin") { try { session.users = await fetchUsers(session); } catch { /* offline */ } }

@@ -214,13 +214,14 @@ const server = http.createServer(async (req, res) => {
       const accessKey = newKey();
       await writeTenant({
         tenantId, accessKey, company: String(b.company || "").slice(0, 200),
+        founderUsername: b.username, // Gründer = Owner dieses Mandanten
         rev: 0, payload: null, createdAt: new Date().toISOString(), updatedAt: null,
       });
       await writeUser({
         username: b.username, salt: b.salt, authVerifier: sha256(b.authHash),
-        wrappedDek: b.wrappedDek, role: "admin", tenantId, createdAt: new Date().toISOString(),
+        wrappedDek: b.wrappedDek, role: "admin", owner: true, tenantId, createdAt: new Date().toISOString(),
       });
-      return send(res, 201, { tenantId, accessKey, role: "admin" });
+      return send(res, 201, { tenantId, accessKey, role: "admin", owner: true });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/prelogin") {
@@ -236,7 +237,18 @@ const server = http.createServer(async (req, res) => {
       if (!u || !eq(sha256(b.authHash || ""), u.authVerifier)) return send(res, 401, { error: "bad_credentials" });
       const t = await readTenant(u.tenantId);
       if (!t) return send(res, 404, { error: "tenant_missing" });
-      return send(res, 200, { tenantId: u.tenantId, accessKey: t.accessKey, wrappedDek: u.wrappedDek, role: u.role });
+      // Migration: bestehender Gründer (erster Admin) wird einmalig zum Owner.
+      if (!u.owner) {
+        const isFounder = t.founderUsername
+          ? t.founderUsername.toLowerCase() === u.username.toLowerCase()
+          : u.role === "admin"; // Alt-Mandant ohne founderUsername: der Admin ist der Gründer
+        if (isFounder) {
+          u.owner = true;
+          await writeUser(u);
+          if (!t.founderUsername) { t.founderUsername = u.username; await writeTenant(t); }
+        }
+      }
+      return send(res, 200, { tenantId: u.tenantId, accessKey: t.accessKey, wrappedDek: u.wrappedDek, role: u.role, owner: !!u.owner });
     }
 
     // Admin legt Mitarbeiter an (Bearer = accessKey des Mandanten + Admin-Nachweis).

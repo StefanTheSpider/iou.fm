@@ -41,6 +41,7 @@ try {
   r = await post("/api/auth/register", { username: "stefan", salt: sSalt, authHash: authHashFor("geheim123", sSalt), wrappedDek: dummyWrapped, company: "Muster GmbH" });
   b = await J(r);
   ok(r.status === 201 && b.tenantId && b.accessKey && b.role === "admin", "register: Admin + Mandant angelegt");
+  ok(b.owner === true, "register: Gründer ist Owner");
   const tenantId = b.tenantId, accessKey = b.accessKey;
 
   // accessKey nicht im Klartext im User-Record (nur im Tenant-File)
@@ -58,6 +59,7 @@ try {
 
   r = await post("/api/auth/login", { username: "stefan", authHash: authHashFor("geheim123", sSalt) }); b = await J(r);
   ok(r.status === 200 && b.tenantId === tenantId && b.accessKey === accessKey && b.role === "admin", "login: korrekt");
+  ok(b.owner === true, "login: Gründer bleibt Owner");
   ok(JSON.stringify(b.wrappedDek) === JSON.stringify(dummyWrapped), "login: wrappedDek zurück");
   r = await post("/api/auth/login", { username: "stefan", authHash: authHashFor("FALSCH", sSalt) });
   ok(r.status === 401, "login: falsches Passwort -> 401");
@@ -80,6 +82,7 @@ try {
   ok(r.status === 201, "adduser: Mitarbeiter angelegt");
   r = await post("/api/auth/login", { username: "lara", authHash: authHashFor("laraPW1", lSalt) }); b = await J(r);
   ok(r.status === 200 && b.tenantId === tenantId && b.role === "user", "adduser: Mitarbeiter kann sich anmelden (gleicher Mandant)");
+  ok(!b.owner, "adduser: Mitarbeiter ist KEIN Owner");
   r = await post("/api/auth/adduser", { adminUsername: "stefan", adminAuthHash: "falsch", newUser: { username: "x", salt: "s", authHash: "h", wrappedDek: dummyWrapped } }, accessKey);
   ok(r.status === 401, "adduser: falscher Admin -> 401");
 

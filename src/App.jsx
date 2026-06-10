@@ -12,6 +12,8 @@ import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
 import { getFeed, triggerSync, saveIntegration, getIntegration } from "./lib/feed.js";
 import { Anfragen, Stornos } from "./components/ShopifyTabs.jsx";
+import OwnerPanel from "./components/OwnerPanel.jsx";
+import { DEMO_DATA } from "./lib/demoData.js";
 import BRANDING from "./branding.js";
 import { applyTheme } from "./lib/theme.js";
 
@@ -26,6 +28,7 @@ export default function App() {
   const [updErr, setUpdErr] = useState("");
   const [feed, setFeed] = useState(null);       // Shopify-Feed vom Hub (Stornos/Refunds/Anfragen)
   const [feedBusy, setFeedBusy] = useState(false);
+  const [ownerView, setOwnerView] = useState({ asUser: false, payout: null, rechnung: null, demo: false });
   const sessionRef = useRef(null);
   const savedTimer = useRef(null);
 
@@ -203,12 +206,17 @@ export default function App() {
     return <><UpdateBanner /><LockScreen onUnlock={onUnlock} branding={branding} /></>;
   }
 
-  const { data } = session;
-  const payoutMode = data.config?.payoutMode || "erstattung";
+  // Owner-Modus: live zwischen Modi umschalten (reine Vorschau, ändert nichts Echtes).
+  const isOwner = session.currentUser.owner === true;
+  const ov = isOwner ? ownerView : { asUser: false, payout: null, rechnung: null, demo: false };
+  const demoMode = !!ov.demo;
+  const data = demoMode ? DEMO_DATA : session.data;
+  const effUpdateData = demoMode ? () => {} : updateData; // im Demo-Modus nichts speichern
+  const payoutMode = ov.payout || data.config?.payoutMode || "erstattung";
   const payoutLabel = payoutMode === "sammel" ? "Sammelüberweisung" : "Erstattungen";
   const setupDone = !!data.config?.setupComplete;
-  const isAdmin = session.currentUser.role === "admin";
-  const rechnungOn = !!data.config?.modules?.rechnung;
+  const isAdmin = (session.currentUser.role === "admin") && !ov.asUser;
+  const rechnungOn = ov.rechnung != null ? ov.rechnung : !!data.config?.modules?.rechnung;
   const Brand = () => branding.logoUrl
     ? <img className="logo-img" src={branding.logoUrl} alt={branding.productName} />
     : <>{branding.brandText}<span>{branding.brandAccent}</span></>;
@@ -236,6 +244,14 @@ export default function App() {
         <button className="lock-btn" onClick={lock}>🔒 Abmelden</button>
       </header>
 
+      {isOwner && (ov.asUser || ov.payout || ov.rechnung != null || ov.demo) && (
+        <div className="owner-banner">
+          Owner-Vorschau aktiv{ov.demo ? " · Demo-Daten" : ""}{ov.asUser ? " · Ansicht: Mitarbeiter" : ""}
+          {ov.payout ? ` · ${ov.payout === "sammel" ? "Sammelüberweisung" : "Erstattungen"}` : ""}
+          {ov.rechnung != null ? ` · Rechnungsprüfung ${ov.rechnung ? "an" : "aus"}` : ""} — keine echten Daten betroffen.
+        </div>
+      )}
+
       <main className="main">
         {!setupDone ? (
           isAdmin ? (
@@ -248,20 +264,25 @@ export default function App() {
           )
         ) : (
           <>
-            {tab === "lohn" && isAdmin && <Lohn data={data} updateData={updateData} canPay={isAdmin} />}
-            {tab === "erstattung" && <Erstattungen data={data} updateData={updateData} profile={payoutMode} canPay={isAdmin} feed={feed} />}
-            {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={updateData} />}
+            {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} />}
+            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} />}
+            {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={effUpdateData} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}
             {tab === "stammdaten" && isAdmin && (
-              <Stammdaten data={data} updateData={updateData} sync={sync} shopify={shopify}
+              <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
           </>
         )}
       </main>
 
+      {isOwner && (
+        <OwnerPanel view={ownerView} setView={setOwnerView}
+          payoutMode={session.data.config?.payoutMode || "erstattung"}
+          rechnungOn={!!session.data.config?.modules?.rechnung} />
+      )}
       <Footer branding={branding} />
     </div>
   );
