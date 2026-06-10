@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { inspectIban, formatIban } from "../lib/iban.js";
 import { normalizeColor } from "../lib/theme.js";
 import CloudSync from "./CloudSync.jsx";
@@ -24,7 +24,7 @@ function useIbanField() {
   return { value, setValue, info, setInfo, check };
 }
 
-export default function Stammdaten({ data, updateData, auth, sync, shopify }) {
+export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant }) {
   const isAdmin = auth?.currentUser?.role === "admin";
   return (
     <div>
@@ -37,6 +37,7 @@ export default function Stammdaten({ data, updateData, auth, sync, shopify }) {
       <Accounts data={data} updateData={updateData} />
       <Suppliers data={data} updateData={updateData} />
       <ShopifySettings data={data} updateData={updateData} shopify={isAdmin ? shopify : null} />
+      {isAdmin && accountant && <AccountantSettings accountant={accountant} />}
       <Branding data={data} updateData={updateData} />
     </div>
   );
@@ -410,3 +411,60 @@ function Branding({ data, updateData }) {
   );
 }
 
+
+function AccountantSettings({ accountant }) {
+  const [email, setEmail] = useState("");
+  const [cc, setCc] = useState("");
+  const [enabled, setEnabled] = useState(false);
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    accountant.get().then((a) => {
+      if (a) { setEmail(a.email || ""); setCc(a.cc || ""); setEnabled(!!a.enabled); setInfo(a); }
+    }).catch(() => {});
+  }, [accountant]);
+
+  async function save() {
+    setErr(""); setMsg(""); setBusy("save");
+    try { await accountant.save({ email: email.trim(), cc: cc.trim(), enabled }); setMsg("Gespeichert."); }
+    catch (e) { setErr(e.message); } finally { setBusy(""); }
+  }
+  async function sendNow() {
+    setErr(""); setMsg(""); setBusy("send");
+    try { const r = await accountant.sendNow(); setMsg(`Testmail gesendet (${r.month}) an ${r.to}.`); }
+    catch (e) { setErr(e.message); } finally { setBusy(""); }
+  }
+
+  return (
+    <div className="card">
+      <h2 style={{ marginTop: 0 }}>Buchhalter / Steuerberater – Monatsversand</h2>
+      <p className="note">
+        Am Monatsende (letzter Tag, 23:59 Uhr) schickt der Hub automatisch die Stornos &amp; Erstattungen des Monats
+        als CSV per Mail – mit Kopie (CC) an deine Adresse. Das SEPA-Zahlungsarchiv ist Ende-zu-Ende-verschlüsselt
+        und wird NICHT versendet.
+      </p>
+      <label className="field"><span>E-Mail Buchhalter/Steuerberater</span>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="buchhaltung@kanzlei.de" /></label>
+      <label className="field"><span>CC (eigene Adresse)</span>
+        <input type="email" value={cc} onChange={(e) => setCc(e.target.value)} placeholder="du@firma.de" /></label>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        Automatischen Monatsversand aktivieren
+      </label>
+      {info && info.mailReady === false && (
+        <p className="note" style={{ color: "#ffb84d" }}>Hinweis: Auf dem Server ist noch kein RESEND_API_KEY gesetzt – ohne den kann nicht gemailt werden.</p>
+      )}
+      {info?.lastSentAt && <p className="note">Zuletzt versendet: {info.lastSentMonth} am {new Date(info.lastSentAt).toLocaleString("de-DE")}</p>}
+      {err && <p className="error-text">{err}</p>}
+      {msg && <p className="note" style={{ color: "var(--ok, #3ddc97)" }}>{msg}</p>}
+      <div className="toolbar" style={{ marginBottom: 0 }}>
+        <button className="btn ghost" onClick={save} disabled={!!busy}>{busy === "save" ? "Speichere…" : "Speichern"}</button>
+        <div className="spacer" />
+        <button className="btn" onClick={sendNow} disabled={!!busy || !email.trim()}>{busy === "send" ? "Sende…" : "Testmail jetzt senden"}</button>
+      </div>
+    </div>
+  );
+}

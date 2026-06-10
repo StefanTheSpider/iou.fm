@@ -10,7 +10,7 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration } from "./lib/feed.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration, getAccountant, saveAccountant, sendAccountantNow } from "./lib/feed.js";
 import { Anfragen, Stornos } from "./components/ShopifyTabs.jsx";
 import OwnerPanel from "./components/OwnerPanel.jsx";
 import { SupportApprovalModal, VendorSupport } from "./components/Support.jsx";
@@ -213,6 +213,12 @@ export default function App() {
     syncNow: async () => { const r = await triggerSync(sessionRef.current); await refreshFeed(); return r; },
   }), [refreshFeed]);
 
+  const accountant = useMemo(() => ({
+    get: () => getAccountant(sessionRef.current),
+    save: (cfg) => saveAccountant(sessionRef.current, cfg),
+    sendNow: (month) => sendAccountantNow(sessionRef.current, month),
+  }), []);
+
   const UpdateBanner = () => update ? (
     <div className="update-banner">
       <span>Neue Version <strong>{update.version}</strong> verfügbar.</span>
@@ -308,7 +314,7 @@ export default function App() {
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}
             {tab === "stammdaten" && isAdmin && (
-              <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify}
+              <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify} accountant={accountant}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
             {tab === "support" && isOwner && <VendorSupport onOpenSession={enterSupport} />}

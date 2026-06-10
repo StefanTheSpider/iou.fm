@@ -7,6 +7,7 @@ ENV TZ=Europe/Berlin
 COPY package.json ./
 COPY index.mjs ./
 COPY shopify.mjs ./
+COPY accountant.mjs ./
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
 EXPOSE 3000

@@ -25,6 +25,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
+import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend } from "./accountant.mjs";
 
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || "./data";
@@ -52,6 +53,51 @@ const TOK_KEY = HUB_SECRET ? crypto.createHash("sha256").update(HUB_SECRET).dige
 // Kundendaten bleiben E2E-verschlüsselt: der Vendor sieht nur, was der Kunde
 // per wrappedDek (für den Support-Public-Key) explizit & befristet freigibt.
 const SUPPORT_KEY = process.env.SUPPORT_KEY || "";
+
+// --- Monatlicher Buchhaltungs-Versand (Resend) ------------------------------
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const RESEND_FROM = process.env.RESEND_FROM || "iou.fm <onboarding@resend.dev>";
+async function sendAccountantFor(t, ym) {
+  const a = t.accountant || {};
+  if (!a.enabled || !a.email) return { skipped: true, reason: "not_configured" };
+  if (!RESEND_API_KEY) return { skipped: true, reason: "no_resend_key" };
+  const csv = buildAccountantCsv(t.shopifyFeed || {}, ym);
+  await sendViaResend({
+    apiKey: RESEND_API_KEY, from: RESEND_FROM, to: a.email, cc: a.cc || null,
+    subject: `Stornos & Erstattungen ${ym} – ${t.company || "iou.fm"}`,
+    text: `Anbei die Stornierungen und Rückerstattungen für ${ym}.\n\nAutomatisch erstellt von iou.fm.`,
+    filename: `Stornos_Erstattungen_${ym}.csv`, csv,
+  });
+  t.accountant.lastSentMonth = ym;
+  t.accountant.lastSentAt = new Date().toISOString();
+  await writeTenant(t);
+  return { ok: true, month: ym, to: a.email };
+}
+async function runAllAccountantMails() {
+  let files = [];
+  try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
+  const ym = thisMonthKey();
+  for (const f of files) {
+    const t = await readJson(path.join(TENANT_DIR, f));
+    if (t?.accountant?.enabled && t.accountant.lastSentMonth !== ym) {
+      try { await sendAccountantFor(t, ym); } catch (e) { console.warn("Buchhaltungs-Mail fehlgeschlagen", t.tenantId, e.message); }
+    }
+  }
+}
+function scheduleMonthlyMail() {
+  const msUntil2359 = () => {
+    const n = new Date(); const next = new Date(n);
+    next.setHours(23, 59, 0, 0);
+    if (next <= n) next.setDate(next.getDate() + 1);
+    return next - n;
+  };
+  const tick = async () => {
+    try { if (isLastDayOfMonth(new Date())) await runAllAccountantMails(); }
+    catch (e) { console.warn("Monats-Mail-Tick:", e.message); }
+    setTimeout(tick, msUntil2359());
+  };
+  setTimeout(tick, msUntil2359());
+}
 const SUPPORT_FILE = path.join(DATA_DIR, "support.json");
 const supportAuth = (req) => !!SUPPORT_KEY && eq(bearer(req), SUPPORT_KEY);
 const now = () => Date.now();
@@ -520,6 +566,38 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
+    // ===== BUCHHALTER-VERSAND (monatlich) =====================================
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "accountant") {
+      const t = await readTenant(parts[2]);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+
+      // POST /api/tenants/:id/accountant/send-now – jetzt testweise senden
+      if (parts[4] === "send-now" && req.method === "POST") {
+        const b = await body(req); const ym = (b && b.month) || thisMonthKey();
+        if (!RESEND_API_KEY) return send(res, 400, { error: "no_resend_key" });
+        try { return send(res, 200, await sendAccountantFor(t, ym)); }
+        catch (e) { return send(res, 502, { error: "send_failed", detail: e.message }); }
+      }
+      if (req.method === "GET") {
+        const a = t.accountant || {};
+        return send(res, 200, { email: a.email || "", cc: a.cc || "", enabled: !!a.enabled,
+          lastSentMonth: a.lastSentMonth || null, lastSentAt: a.lastSentAt || null, mailReady: !!RESEND_API_KEY });
+      }
+      if (req.method === "PUT") {
+        const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+        t.accountant = {
+          ...(t.accountant || {}),
+          email: String(b.email || "").trim().slice(0, 200),
+          cc: String(b.cc || "").trim().slice(0, 200),
+          enabled: !!b.enabled,
+        };
+        await writeTenant(t);
+        return send(res, 200, { ok: true });
+      }
+      return send(res, 405, { error: "method_not_allowed" });
+    }
+
     return send(res, 404, { error: "not_found" });
   } catch (e) {
     return send(res, 500, { error: "server_error" });
@@ -531,6 +609,7 @@ await fs.mkdir(USER_DIR, { recursive: true });
 server.listen(PORT, () => {
   console.log(`iou.fm sync-hub on :${PORT}  (data: ${DATA_DIR}, TZ: ${process.env.TZ || "system"})`);
   scheduleNightly();
+  scheduleMonthlyMail();
 });
 
 export { server };

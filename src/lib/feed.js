@@ -34,3 +34,26 @@ export async function triggerSync(session) {
   if (!r.ok) throw new Error(j.detail || `Sync fehlgeschlagen (${r.status}).`);
   return j;
 }
+
+// Buchhalter-Monatsversand (Resend, serverseitig).
+export async function getAccountant(session) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/accountant`), { headers: auth(session) });
+  return r.ok ? r.json() : null;
+}
+export async function saveAccountant(session, { email, cc, enabled }) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/accountant`), {
+    method: "PUT", headers: { ...auth(session), "Content-Type": "application/json" },
+    body: JSON.stringify({ email, cc, enabled }),
+  });
+  if (!r.ok) throw new Error(`Speichern fehlgeschlagen (${r.status}).`);
+  return r.json();
+}
+export async function sendAccountantNow(session, month) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/accountant/send-now`), {
+    method: "POST", headers: { ...auth(session), "Content-Type": "application/json" },
+    body: JSON.stringify(month ? { month } : {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || j.error || `Versand fehlgeschlagen (${r.status}).`);
+  return j;
+}
