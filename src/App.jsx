@@ -8,7 +8,7 @@ import Rechnungen from "./components/Rechnungen.jsx";
 import Archiv from "./components/Archiv.jsx";
 import Setup from "./components/Setup.jsx";
 import Footer from "./components/Footer.jsx";
-import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser } from "./lib/vault.js";
+import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
 import { getFeed, triggerSync, saveIntegration, getIntegration, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds } from "./lib/feed.js";
@@ -34,6 +34,15 @@ export default function App() {
   const [ownerView, setOwnerView] = useState({ asUser: false, payout: null, rechnung: null, demo: false });
   const [supportStatus, setSupportStatus] = useState(null); // Kunde: offene Support-Anfragen
   const [showApproval, setShowApproval] = useState(false);
+  const [bioOffer, setBioOffer] = useState(false); // „Touch ID aktivieren?"-Banner
+
+  // Biometrie anbieten, wenn verfügbar und noch nicht eingerichtet (echte Sitzung).
+  useEffect(() => {
+    (async () => {
+      if (session && !session.currentUser?.support && await bioAvailable() && !bioEnabledUser()) setBioOffer(true);
+      else setBioOffer(false);
+    })();
+  }, [session]);
   const sessionRef = useRef(null);
   const savedTimer = useRef(null);
 
@@ -307,6 +316,16 @@ export default function App() {
         <span className="user-chip">{session.currentUser.username}{session.currentUser.role === "admin" ? " · Admin" : ""}</span>
         <button className="lock-btn" onClick={lock}>🔒 Abmelden</button>
       </header>
+
+      {bioOffer && !inSupport && (
+        <div className="owner-banner" style={{ background: "linear-gradient(90deg, rgba(61,220,151,.16), rgba(61,220,151,.06))", borderColor: "rgba(61,220,151,.5)", color: "#7ef0bd" }}>
+          Schneller anmelden: <strong>Touch ID / Windows Hello</strong> für dieses Gerät aktivieren?
+          <button className="btn small" style={{ marginLeft: 12 }} onClick={async () => {
+            try { await enableBiometric(sessionRef.current); setBioOffer(false); } catch (e) { setUpdErr("Biometrie konnte nicht aktiviert werden: " + (e.message || "")); }
+          }}>Aktivieren</button>
+          <button className="btn small ghost" style={{ marginLeft: 8 }} onClick={() => setBioOffer(false)}>Später</button>
+        </div>
+      )}
 
       {inSupport && (
         <div className="support-banner">

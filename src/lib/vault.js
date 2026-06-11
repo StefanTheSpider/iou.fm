@@ -10,6 +10,8 @@
 // die Löhne, die nie zum Hub übertragen werden). Geteilt wird nur sharedSubset.
 
 import { HUB_URL } from "../config.js";
+import { bioStore, bioUnlockSecret } from "./biometric.js";
+export { bioAvailable, bioEnabledUser, bioDisable } from "./biometric.js";
 
 const SESSION_KEY = "iou_session_v3";
 const LEGACY_STORE = "sepa2_vault_v2"; // alter lokaler Tresor (für Migration)
@@ -276,4 +278,24 @@ export async function fetchUsers(session) {
 
 export function clearSession() {
   sessionStorage.removeItem(SESSION_KEY);
+}
+
+// --- Biometrisches Entsperren (Touch ID / Windows Hello) --------------------
+// Speichert nach erfolgreichem Login die zum Wiederaufbau der Sitzung nötigen
+// Werte (inkl. Datenschlüssel) im OS-Schlüsselspeicher – biometrisch geschützt.
+export async function enableBiometric(session) {
+  const raw = await crypto.subtle.exportKey("raw", session.dek);
+  const blob = JSON.stringify({
+    dek: b64(raw), tenantId: session.tenantId, accessKey: session.accessKey,
+    username: session.currentUser.username, role: session.currentUser.role,
+    owner: !!session.currentUser.owner, authHash: session.authHash,
+  });
+  await bioStore(session.currentUser.username, blob);
+}
+// Entsperrt per Touch ID/Hello und baut die Sitzung ohne Passwort wieder auf.
+export async function unlockWithBiometrics() {
+  const blob = await bioUnlockSecret();
+  const s = JSON.parse(blob);
+  const dek = await importDek(unb64(s.dek));
+  return buildSession({ tenantId: s.tenantId, accessKey: s.accessKey, role: s.role, owner: s.owner, username: s.username, authHash: s.authHash, dek });
 }

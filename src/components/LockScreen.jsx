@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { login, register } from "../lib/vault.js";
+import { useState, useEffect, useRef } from "react";
+import { login, register, bioAvailable, bioEnabledUser, unlockWithBiometrics } from "../lib/vault.js";
 import BRANDING from "../branding.js";
 
 // Login ist der primäre Screen: von jedem Gerät nur mit Benutzername + Passwort.
@@ -12,7 +12,26 @@ export default function LockScreen({ onUnlock, branding = BRANDING }) {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [bioUser, setBioUser] = useState("");   // eingerichteter Touch-ID/Hello-Benutzer
+  const autoTried = useRef(false);              // Auto-Prompt nur einmal pro Screen
   const isRegister = mode === "register";
+
+  useEffect(() => {
+    (async () => {
+      if (await bioAvailable() && bioEnabledUser()) {
+        setBioUser(bioEnabledUser());
+        // Touch ID sofort beim Öffnen auslösen – Finger drauflegen genügt, kein Klick nötig.
+        if (!autoTried.current) { autoTried.current = true; bioLogin(); }
+      }
+    })();
+  }, []);
+
+  async function bioLogin() {
+    setError(""); setBusy(true);
+    try { onUnlock(await unlockWithBiometrics()); }
+    catch (err) { setError(err?.message ? `Biometrie: ${err.message}` : "Biometrisches Entsperren abgebrochen."); }
+    finally { setBusy(false); }
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -46,6 +65,15 @@ export default function LockScreen({ onUnlock, branding = BRANDING }) {
         <p className="muted" style={{ marginTop: 0 }}>
           {isRegister ? "Neue Firma einrichten – Admin-Konto anlegen" : "Anmelden"}
         </p>
+
+        {!isRegister && bioUser && (
+          <>
+            <button type="button" className="btn" disabled={busy} style={{ width: "100%", marginTop: 16 }} onClick={bioLogin}>
+              👆 Mit Touch ID / Windows Hello entsperren ({bioUser})
+            </button>
+            <p className="note" style={{ margin: "10px 0 0" }}>oder mit Benutzername + Passwort anmelden</p>
+          </>
+        )}
 
         {isRegister && (
           <label className="field" style={{ textAlign: "left", marginTop: 18 }}>
