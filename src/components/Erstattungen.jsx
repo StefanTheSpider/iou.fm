@@ -4,6 +4,7 @@ import { parseAmount, formatEur } from "../lib/money.js";
 import { computeRefund, REFUND_MODES } from "../lib/refund.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import { fetchShopifyOrder } from "../lib/shopify.js";
+import EbicsSendButton from "./EbicsSendButton.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const deDate = (iso) => (iso ? iso.split("-").reverse().join(".") : "");
@@ -67,6 +68,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [fStatus, setFStatus] = useState("offen");
   const [showModal, setShowModal] = useState(false);
   const [saved, setSaved] = useState("");
+  const [lastSepa, setLastSepa] = useState(null); // { xml, filename } – für optionalen EBICS-Versand
   const [confirmDel, setConfirmDel] = useState(null);
   const [warnOrder, setWarnOrder] = useState(null); // { o, cancelled, refunded } – Doppelzahlungs-Warnung
 
@@ -186,6 +188,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     }
     setShowModal(false);
     setError("");
+    setLastSepa({ xml, filename });
     setSaved(`✓ „${filename}" wurde gespeichert (Ordner „Downloads"). ${payments.length} Zahlung${payments.length === 1 ? "" : "en"}, Summe ${formatEur(sumEligible)}. Liegt auch im Archiv.`);
   }
 
@@ -228,6 +231,11 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
           <p className="note" style={{ margin: "8px 0 0", color: "var(--ok, #3ddc97)" }}>
             {saved} <button className="link-btn" onClick={() => setSaved("")}>ausblenden</button>
           </p>
+        )}
+        {canPay && lastSepa && (
+          <div style={{ marginTop: 10 }}>
+            <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: isErstattung ? "erstattung" : "sammel", filename: lastSepa.filename }} />
+          </div>
         )}
       </div>
 

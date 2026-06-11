@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "iou-fm"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "robius-authentication",
  "serde",

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { inspectIban, formatIban } from "../lib/iban.js";
 import { normalizeColor } from "../lib/theme.js";
 import CloudSync from "./CloudSync.jsx";
+import EbicsSettings from "./EbicsSettings.jsx";
 
 function IbanStatus({ info }) {
   if (!info) return null;
@@ -37,6 +38,7 @@ export default function Stammdaten({ data, updateData, auth, sync, shopify, acco
       <Accounts data={data} updateData={updateData} />
       <Suppliers data={data} updateData={updateData} />
       <ShopifySettings data={data} updateData={updateData} shopify={isAdmin ? shopify : null} />
+      {isAdmin && <EbicsSettings data={data} updateData={updateData} />}
       {isAdmin && accountant && <AccountantSettings accountant={accountant} />}
       <Branding data={data} updateData={updateData} />
     </div>

@@ -3,6 +3,7 @@ import { pdfToLines, parseDatev, tidyName } from "../lib/datev.js";
 import { inspectIban, formatIban, validateIban } from "../lib/iban.js";
 import { parseAmount, formatEur } from "../lib/money.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
+import EbicsSendButton from "./EbicsSendButton.jsx";
 
 export default function Lohn({ data, updateData, canPay = true }) {
   const [parsed, setParsed] = useState(null);
@@ -13,6 +14,7 @@ export default function Lohn({ data, updateData, canPay = true }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [drag, setDrag] = useState(false);
+  const [lastSepa, setLastSepa] = useState(null); // { xml, filename } – für optionalen EBICS-Versand
   const fileRef = useRef(null);
 
   const accounts = data.accounts || [];
@@ -165,6 +167,7 @@ export default function Lohn({ data, updateData, canPay = true }) {
       filename, payments: payments.map((p) => ({ name: p.name, iban: p.iban, amountCents: p.amountCents, purpose: p.purpose })), xml,
     };
     updateData((d) => ({ ...d, batches: [batch, ...(d.batches || [])] }), true);
+    setLastSepa({ xml, filename });
     setError("");
   }
 
@@ -242,6 +245,9 @@ export default function Lohn({ data, updateData, canPay = true }) {
           </button>
         ) : (
           <span className="note">Nur Admins erstellen die SEPA-Lohndatei.</span>
+        )}
+        {canPay && lastSepa && (
+          <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: "lohn", filename: lastSepa.filename }} style={{ marginLeft: 8 }} />
         )}
       </div>
 
