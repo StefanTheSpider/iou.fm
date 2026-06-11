@@ -27,6 +27,7 @@ function emptyRow(defaults = {}) {
     refundViaSepa: false,         // Karten-/PayPal-Zahlung bewusst per Überweisung erstatten
     art: "erstattung",            // erstattung | storno (für Buchhaltung)
     iban: "", ibanValid: false, ibanReason: "", bic: "",
+    note: "",                     // interner Grund der Erstattung
     paid: "", currency: "EUR",
     mode: defaults.mode || "fee", feePct: defaults.feePct ?? "30", fixed: "",
     purpose: "",
@@ -338,6 +339,9 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                 )}
                 <label className="f col-full"><span>Verwendungszweck</span>
                   <input type="text" value={r.purpose} onChange={(e) => patchRow(r.id, { purpose: e.target.value })} /></label>
+                <label className="f col-full"><span>Interner Kommentar (Grund der Erstattung)</span>
+                  <input type="text" value={r.note || ""} placeholder="z. B. Konzert abgesagt, Kulanz, Doppelbuchung …"
+                    onChange={(e) => patchRow(r.id, { note: e.target.value })} /></label>
               </div>
             </div>
           );
