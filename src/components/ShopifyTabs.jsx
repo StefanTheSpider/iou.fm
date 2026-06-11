@@ -111,13 +111,15 @@ export function Stornos({ feed, canPay, onRefresh, busy }) {
   const [cat, setCat] = useState("alle");
   const cancellations = (feed?.cancellations || []).map((c) => ({ ...c, art: "Stornierung" }));
   const refunds = (feed?.refunds || []).map((r) => ({ ...r, art: "Erstattung" }));
-  const all = [...cancellations, ...refunds]
+  // In iou.fm per SEPA erstattete Fälle (z. B. Klarna/PayPal) – für USt-Korrektur.
+  const appRefunds = (feed?.appRefunds || []).map((r) => ({ ...r, art: "Erstattung (App/SEPA)", category: r.category || "Unzugeordnet" }));
+  const all = [...cancellations, ...refunds, ...appRefunds]
     .filter((r) => (art === "alle" || r.art === art) && (cat === "alle" || r.category === cat))
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const sum = all.reduce((s, r) => s + (r.amountCents || 0), 0);
 
   function exportIrina() {
-    const rows = [...cancellations, ...refunds];
+    const rows = [...cancellations, ...refunds, ...appRefunds];
     const wb = XLSX.utils.book_new();
     for (const c of CATS) {
       const data = rows.filter((r) => r.category === c).sort((a, b) => (a.date || "").localeCompare(b.date || ""))
@@ -144,12 +146,12 @@ export function Stornos({ feed, canPay, onRefresh, busy }) {
         <div className="stat"><div className="num">{all.length}</div><div className="lbl">Einträge</div></div>
         <div className="stat"><div className="num">{formatEur(sum)}</div><div className="lbl">Summe</div></div>
         <div className="spacer" style={{ flex: 1 }} />
-        {canPay && <button className="btn" onClick={exportIrina} disabled={!cancellations.length && !refunds.length}>Excel für Buchhaltung (3 Blätter)</button>}
+        {canPay && <button className="btn" onClick={exportIrina} disabled={!cancellations.length && !refunds.length && !appRefunds.length}>Excel für Buchhaltung</button>}
       </div>
       <div className="toolbar">
         <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Art
           <select value={art} onChange={(e) => setArt(e.target.value)}>
-            <option value="alle">alle</option><option value="Stornierung">Stornierungen</option><option value="Erstattung">Erstattungen</option>
+            <option value="alle">alle</option><option value="Stornierung">Stornierungen</option><option value="Erstattung">Erstattungen (Shopify)</option><option value="Erstattung (App/SEPA)">Erstattungen (App/SEPA)</option>
           </select>
         </label>
         <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Kategorie

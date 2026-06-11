@@ -61,7 +61,7 @@ async function sendAccountantFor(t, ym) {
   const a = t.accountant || {};
   if (!a.enabled || !a.email) return { skipped: true, reason: "not_configured" };
   if (!RESEND_API_KEY) return { skipped: true, reason: "no_resend_key" };
-  const csv = buildAccountantCsv(t.shopifyFeed || {}, ym);
+  const csv = buildAccountantCsv(t.shopifyFeed || {}, ym, t.appRefunds || []);
   await sendViaResend({
     apiKey: RESEND_API_KEY, from: RESEND_FROM, to: a.email, cc: a.cc || null,
     subject: `Stornos & Erstattungen ${ym} – ${t.company || "iou.fm"}`,
@@ -421,7 +421,8 @@ const server = http.createServer(async (req, res) => {
       const t = await readTenant(id);
       if (!t) return send(res, 404, { error: "not_found" });
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
-      return send(res, 200, t.shopifyFeed || { cancellations: [], refunds: [], requests: [], syncedAt: null });
+      const fd = t.shopifyFeed || { cancellations: [], refunds: [], requests: [], syncedAt: null };
+      return send(res, 200, { ...fd, appRefunds: t.appRefunds || [] });
     }
 
     // POST /api/tenants/:id/sync  – Abgleich jetzt auslösen (Test/manuell)
@@ -564,6 +565,36 @@ const server = http.createServer(async (req, res) => {
         (!b.grantId || g.id === b.grantId) ? { ...g, status: "revoked" } : g);
       await writeTenant(t);
       return send(res, 200, { ok: true });
+    }
+
+    // ===== APP-ERSTATTUNGEN (SEPA) für den Buchhalter-Export ===================
+    // Nicht-sensible Zusammenfassung (KEINE IBAN) der in iou.fm getätigten
+    // Erstattungen – für USt-Korrektur. Wird beim Speichern eines Erstattungs-Batches gepusht.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "app-refunds") {
+      const t = await readTenant(parts[2]);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (req.method === "POST") {
+        const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+        const incoming = Array.isArray(b.refunds) ? b.refunds : [];
+        const clean = incoming.map((r) => ({
+          orderNumber: String(r.orderNumber || "").slice(0, 40),
+          customer: String(r.customer || "").slice(0, 120),
+          event: String(r.event || "").slice(0, 160),
+          category: String(r.category || "").slice(0, 40),
+          amountCents: Math.round(Number(r.amountCents) || 0),
+          date: String(r.date || "").slice(0, 30),
+          currency: String(r.currency || "EUR").slice(0, 8),
+        })).filter((r) => r.amountCents > 0);
+        const key = (r) => `${r.orderNumber}|${r.date}|${r.amountCents}`;
+        const seen = new Set((t.appRefunds || []).map(key));
+        t.appRefunds = [...(t.appRefunds || [])];
+        for (const r of clean) { if (!seen.has(key(r))) { seen.add(key(r)); t.appRefunds.push(r); } }
+        await writeTenant(t);
+        return send(res, 200, { ok: true, total: t.appRefunds.length });
+      }
+      if (req.method === "GET") return send(res, 200, { refunds: t.appRefunds || [] });
+      return send(res, 405, { error: "method_not_allowed" });
     }
 
     // ===== BUCHHALTER-VERSAND (monatlich) =====================================

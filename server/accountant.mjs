@@ -8,11 +8,13 @@ const csvCell = (s) => {
   return /[";\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 };
 
-// Liefert die Einträge (Stornos + Erstattungen) eines Monats "YYYY-MM".
-export function entriesForMonth(feed, ym) {
+// Liefert die Einträge (Stornos + Shopify-Erstattungen + App-/SEPA-Erstattungen)
+// eines Monats "YYYY-MM". appRefunds = im iou.fm per Überweisung erstattete Fälle.
+export function entriesForMonth(feed, ym, appRefunds = []) {
   const rows = [
     ...(feed?.cancellations || []).map((c) => ({ art: "Stornierung", ...c })),
     ...(feed?.refunds || []).map((r) => ({ art: "Erstattung", ...r })),
+    ...(appRefunds || []).map((r) => ({ art: "Erstattung (App/SEPA)", ...r })),
   ];
   return rows
     .filter((r) => String(r.date || "").slice(0, 7) === ym)
@@ -20,12 +22,13 @@ export function entriesForMonth(feed, ym) {
 }
 
 // CSV (deutsch: ; getrennt, Komma als Dezimal) für die Buchhaltung.
-export function buildAccountantCsv(feed, ym) {
+export function buildAccountantCsv(feed, ym, appRefunds = []) {
   const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Betrag (EUR)"];
-  const rows = entriesForMonth(feed, ym).map((r) => [
+  const entries = entriesForMonth(feed, ym, appRefunds);
+  const rows = entries.map((r) => [
     r.art, r.event || "", deDate(r.date), r.customer || "", r.orderNumber || "", r.category || "", eur(r.amountCents),
   ]);
-  const sum = entriesForMonth(feed, ym).reduce((s, r) => s + (r.amountCents || 0), 0);
+  const sum = entries.reduce((s, r) => s + (r.amountCents || 0), 0);
   rows.push([]);
   rows.push(["Summe", "", "", "", "", "", eur(sum)]);
   return [head, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");

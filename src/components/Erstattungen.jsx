@@ -38,10 +38,20 @@ function emptyRow(defaults = {}) {
   };
 }
 
-export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null }) {
+export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null, onAppRefunds = null }) {
   const isErstattung = profile !== "sammel";
   const cancelledSet = new Set((feed?.cancellations || []).map((c) => c.orderNumber));
   const cancelInfo = (num) => (feed?.cancellations || []).find((c) => c.orderNumber === String(num).replace(/^#/, ""));
+  // Bereits erstattet? (Shopify-Refund ODER per App/SEPA ausgezahlt) – Doppelzahlungs-Schutz.
+  const norm = (n) => String(n ?? "").replace(/^#/, "").trim();
+  const refundedInfo = (num) => {
+    const n = norm(num);
+    const app = (feed?.appRefunds || []).find((r) => norm(r.orderNumber) === n);
+    if (app) return { ...app, source: "App/SEPA" };
+    const shop = (feed?.refunds || []).find((r) => norm(r.orderNumber) === n);
+    if (shop) return { ...shop, source: "Shopify" };
+    return null;
+  };
   const accounts = data.accounts || [];
   const shopify = data.shopify || {};
   const shopifyConnected = !!(shopify.domain && shopify.token);
@@ -57,6 +67,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [showModal, setShowModal] = useState(false);
   const [saved, setSaved] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
+  const [warnOrder, setWarnOrder] = useState(null); // { o, cancelled, refunded } – Doppelzahlungs-Warnung
 
   // Alle Änderungen laufen über data.refunds → der Speichern-Button erscheint.
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
@@ -75,18 +86,28 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     patchRow(id, { ibanValid: info.ok, ibanReason: info.reason || "", bic: info.bic || "" });
   }
 
+  // Order als neue Zeile übernehmen (nach Prüfung/Bestätigung).
+  function addRowFromOrder(o) {
+    setRefunds((rs) => [emptyRow({
+      mode: defMode, feePct: defFee,
+      row: { orderNumber: o.orderNumber, customerName: o.customerName, method: o.method || "ueberweisung", paid: (o.totalCents / 100).toFixed(2), currency: o.currency, purpose: o.suggestedPurpose },
+    }), ...rs]);
+    setOrderInput("");
+  }
+
   async function importOrder() {
     setError(""); const num = orderInput.trim(); if (!num) return;
     setBusy(true);
     try {
       const o = await fetchShopifyOrder({ domain: shopify.domain, token: shopify.token, orderNumber: num });
-      setRefunds((rs) => [emptyRow({
-        mode: defMode, feePct: defFee,
-        row: { orderNumber: o.orderNumber, customerName: o.customerName, method: o.method || "ueberweisung", paid: (o.totalCents / 100).toFixed(2), currency: o.currency, purpose: o.suggestedPurpose },
-      }), ...rs]);
-      setOrderInput("");
-      const c = cancelInfo(num);
-      if (c) setError(`⚠︎ Bestellung ${o.orderNumber} ist laut Shopify bereits storniert (${new Date(c.date).toLocaleDateString("de-DE")}).`);
+      const cancelled = cancelInfo(num);
+      const refunded = refundedInfo(num);
+      if (cancelled || refunded) {
+        // Doppelzahlungs-Schutz: erst bewusst bestätigen, sonst NICHT übernehmen.
+        setWarnOrder({ o, cancelled, refunded });
+      } else {
+        addRowFromOrder(o);
+      }
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
@@ -146,6 +167,16 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       refunds: (dd.refunds || []).map((r) => ids.has(r.id) ? { ...r, status: "erledigt", art: "erstattung", erledigtAm: gen, batchId } : r),
       batches: [batch, ...(dd.batches || [])],
     }), true);
+    // Zusammenfassung (ohne IBAN) an den Hub – für den Buchhalter-Export/USt-Korrektur.
+    if (isErstattung && onAppRefunds) {
+      const summaries = eligible.map(({ r, refund }) => ({
+        orderNumber: String(r.orderNumber || "").replace(/^#/, ""),
+        customer: r.customerName,
+        event: String(r.purpose || "").replace(/^Erstattung\s+\S+\s*/i, "").trim(),
+        amountCents: refund.refundCents, date: execDate, currency: r.currency || "EUR",
+      })).filter((s) => s.amountCents > 0);
+      if (summaries.length) onAppRefunds(summaries);
+    }
     setShowModal(false);
     setError("");
     setSaved(`✓ „${filename}" wurde gespeichert (Ordner „Downloads"). ${payments.length} Zahlung${payments.length === 1 ? "" : "en"}, Summe ${formatEur(sumEligible)}. Liegt auch im Archiv.`);
@@ -325,6 +356,41 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
           onCancel={() => setConfirmDel(null)}
           onConfirm={() => removeRow(confirmDel)} />
       )}
+
+      {warnOrder && (
+        <AlreadyPaidModal
+          info={warnOrder}
+          onCancel={() => setWarnOrder(null)}
+          onConfirm={() => { addRowFromOrder(warnOrder.o); setWarnOrder(null); }} />
+      )}
+    </div>
+  );
+}
+
+// Dicke Warnung: Bestellung wurde bereits erstattet/storniert -> Doppelzahlungs-Schutz.
+function AlreadyPaidModal({ info, onCancel, onConfirm }) {
+  const { o, cancelled, refunded } = info;
+  const d = (x) => (x ? new Date(x).toLocaleDateString("de-DE") : "");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onCancel}>
+      <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f", boxShadow: "0 20px 60px rgba(0,0,0,.6)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>⚠️</div>
+        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Achtung – dieser Kunde hat schon Geld bekommen!</h2>
+        <p style={{ fontSize: 15 }}>
+          Bestellung <strong>{o.orderNumber}</strong>{o.customerName ? <> ({o.customerName})</> : ""} wurde bereits
+          {refunded ? <> <strong>erstattet</strong>{refunded.amountCents ? <> über <strong>{formatEur(refunded.amountCents)}</strong></> : ""}{refunded.date ? <> am {d(refunded.date)}</> : ""} (Quelle: {refunded.source})</> : ""}
+          {refunded && cancelled ? " und" : ""}
+          {cancelled ? <> <strong>storniert</strong>{cancelled.date ? <> am {d(cancelled.date)}</> : ""}</> : ""}.
+        </p>
+        <p className="note" style={{ fontSize: 14 }}>
+          Wenn du sie erneut hinzufügst, riskierst du eine <strong>Doppel-Erstattung</strong>. Das kommt vor – aber bitte nur bewusst.
+        </p>
+        <div className="toolbar" style={{ marginBottom: 0, marginTop: 8 }}>
+          <button className="btn" onClick={onCancel}>Abbrechen (nicht hinzufügen)</button>
+          <div className="spacer" />
+          <button className="btn danger" onClick={onConfirm}>Trotzdem hinzufügen</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -10,7 +10,7 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration, getAccountant, saveAccountant, sendAccountantNow } from "./lib/feed.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds } from "./lib/feed.js";
 import { Anfragen, Stornos } from "./components/ShopifyTabs.jsx";
 import OwnerPanel from "./components/OwnerPanel.jsx";
 import { SupportApprovalModal, VendorSupport } from "./components/Support.jsx";
@@ -48,7 +48,7 @@ export default function App() {
 
   useEffect(() => {
     restoreSession().then((s) => {
-      if (s) { setSession(s); sessionRef.current = s; if (s.tenantId) { pullQuiet(); refreshFeed(); refreshSupport(); } }
+      if (s) { setSession(s); sessionRef.current = s; if (s.tenantId) { pullQuiet(); refreshFeed(); refreshSupport(); backfillAppRefunds(s); } }
     }).finally(() => setRestoring(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,11 +194,37 @@ export default function App() {
     if (sessionRef.current) sessionRef.current = { ...sessionRef.current, users };
   }, []);
 
+  // In iou.fm getätigte Erstattungen (ohne IBAN) für den Buchhalter-Export melden.
+  const bookAppRefunds = useCallback(async (refunds) => {
+    await pushAppRefunds(sessionRef.current, refunds);
+    refreshFeed();
+  }, [refreshFeed]);
+
+  // Einmaliger Backfill: vorhandene Erstattungs-Batches (letzte ~3 Monate) nachmelden.
+  const backfillAppRefunds = useCallback(async (sess) => {
+    if (!sess?.tenantId || sess.currentUser?.support) return;
+    const since = new Date(Date.now() - 95 * 864e5).toISOString().slice(0, 10);
+    const summaries = [];
+    for (const b of (sess.data?.batches || [])) {
+      if (b.kind !== "erstattung") continue;
+      const date = (b.execDate || b.createdAt || "").slice(0, 10);
+      if (date && date < since) continue;
+      for (const p of (b.payments || [])) {
+        const m = String(p.purpose || "").match(/^Erstattung\s+(\S+)\s*(.*)$/i);
+        summaries.push({
+          orderNumber: m ? m[1].replace(/^#/, "") : "", customer: p.name || "",
+          event: m ? m[2].trim() : "", amountCents: p.amountCents, date, currency: "EUR",
+        });
+      }
+    }
+    if (summaries.length) { try { await pushAppRefunds(sess, summaries); refreshFeed(); } catch { /* egal */ } }
+  }, [refreshFeed]);
+
   // Nach dem Anmelden den aktuellen Cloud-Stand + Shopify-Feed holen.
   const onUnlock = useCallback((s) => {
     setSession(s); sessionRef.current = s;
-    if (s.tenantId) { pullQuiet(); refreshFeed(); refreshSupport(); }
-  }, [pullQuiet, refreshFeed, refreshSupport]);
+    if (s.tenantId) { pullQuiet(); refreshFeed(); refreshSupport(); backfillAppRefunds(s); }
+  }, [pullQuiet, refreshFeed, refreshSupport, backfillAppRefunds]);
 
   // Status/Manueller Refresh für die Stammdaten-Oberfläche (Sync läuft automatisch).
   const sync = useMemo(() => ({
@@ -308,7 +334,7 @@ export default function App() {
         ) : (
           <>
             {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} />}
-            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} />}
+            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={effUpdateData} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}

@@ -48,6 +48,17 @@ export async function saveAccountant(session, { email, cc, enabled }) {
   if (!r.ok) throw new Error(`Speichern fehlgeschlagen (${r.status}).`);
   return r.json();
 }
+// In iou.fm getätigte Erstattungen (Zusammenfassung ohne IBAN) für den Buchhalter-Export.
+export async function pushAppRefunds(session, refunds) {
+  if (!session?.tenantId || !refunds?.length) return;
+  try {
+    await fetch(api(`/api/tenants/${session.tenantId}/app-refunds`), {
+      method: "POST", headers: { ...auth(session), "Content-Type": "application/json" },
+      body: JSON.stringify({ refunds }),
+    });
+  } catch { /* offline egal – läuft beim nächsten Mal */ }
+}
+
 export async function sendAccountantNow(session, month) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/accountant/send-now`), {
     method: "POST", headers: { ...auth(session), "Content-Type": "application/json" },

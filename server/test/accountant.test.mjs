@@ -25,6 +25,17 @@ ok(csv.includes("Erstattung;Sportevent Wien;20.05.2026;Ali;1003;Österreich;74,0
 ok(!csv.includes("Robbie"), "CSV: Juni-Eintrag NICHT im Mai-Export");
 ok(/Summe;;;;;;203,00/.test(csv), "CSV: Summe = 129,00 + 74,00 = 203,00");
 
+// App-/SEPA-Erstattungen werden mit aufgenommen (USt-Korrektur)
+const appRefunds = [
+  { orderNumber: "29985", customer: "Melissa Wilkop", event: "BTS München", amountCents: 14990, date: "2026-05-15", category: "" },
+  { orderNumber: "30000", customer: "Egal", event: "X", amountCents: 5000, date: "2026-06-02", category: "" }, // anderer Monat
+];
+const csvApp = buildAccountantCsv(feed, "2026-05", appRefunds);
+ok(csvApp.includes("Erstattung (App/SEPA);BTS München;15.05.2026;Melissa Wilkop;29985;;149,90"), "CSV: App-Erstattung mit Bestellnummer enthalten");
+ok(!csvApp.includes("30000"), "CSV: App-Erstattung aus anderem Monat NICHT enthalten");
+ok(/Summe;;;;;;352,90/.test(csvApp), "CSV: Summe inkl. App-Erstattung (203,00 + 149,90)");
+ok(entriesForMonth(feed, "2026-05", appRefunds).length === 3, "entriesForMonth: inkl. App-Erstattung (3)");
+
 // Quoting bei Semikolon/Anführungszeichen
 const tricky = buildAccountantCsv({ cancellations: [{ date: "2026-05-01", event: 'A; "B"', customer: "X", orderNumber: "9", category: "Reisen", amountCents: 100 }] }, "2026-05");
 ok(tricky.includes('"A; ""B"""'), "CSV: Sonderzeichen korrekt escaped");
