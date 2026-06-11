@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iou.fm — Bedienungsanleitung</title>
+<meta name="description" content="Rollenbasierte Bedienungsanleitung für iou.fm – Löhne, Erstattungen, Rechnungen, SEPA-Export." />
+<link rel="icon" type="image/png" href="favicon.png" />
+<style>
+  :root{--bg:#0E1116;--panel:#161b22;--border:#2a313c;--text:#e9eef5;--muted:#9aa6b2;--gold:#d9b25a;--ink:#241a05;}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.6}
+  a{color:var(--gold)}
+  .wrap{max-width:820px;margin:0 auto;padding:0 22px 60px}
+  header{padding:26px 0 6px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  header img{height:30px}
+  .back{font-size:14px;color:var(--muted)}
+  h1{font-size:32px;letter-spacing:-.5px;margin:26px 0 6px}
+  h2{font-size:21px;margin:34px 0 10px;padding-top:12px;border-top:1px solid var(--border)}
+  h3{font-size:16px;margin:20px 0 6px;color:var(--gold)}
+  p,li{color:#d6deea}
+  .sub{color:var(--muted);margin-top:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--border);padding:8px 10px;text-align:left}
+  th{background:rgba(217,178,90,.12);color:var(--gold)}
+  td.c{text-align:center}
+  ol,ul{padding-left:22px}
+  blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--gold);background:var(--panel);border-radius:0 10px 10px 0;color:var(--muted);font-size:14.5px}
+  code{background:var(--panel);padding:1px 6px;border-radius:5px;font-size:13px}
+  .note{color:var(--muted);font-size:13px}
+  footer{margin-top:40px;color:var(--muted);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a href="index.html"><img src="iou-logo-gold.png" alt="iou.fm" /></a>
+    <a class="back" href="index.html">← Download</a>
+  </header>
+
+  <h1>Bedienungsanleitung</h1>
+  <p class="sub"><strong>IBAN · Order · Überweisung</strong> — sichere, Ende-zu-Ende-verschlüsselte SEPA-Zahlungs-App für Löhne, Erstattungen und Rechnungen. Stand: v0.2.9.</p>
+
+  <h2>1. Was iou.fm macht</h2>
+  <p>iou.fm erstellt <strong>SEPA-Dateien (pain.001)</strong> für Überweisungen und verwaltet die Vorgänge: Löhne (DATEV-PDF), Erstattungen (auch mit Shop-Import/Stornogebühr), Rechnungen (PDF/E-Rechnung), Rückbuchungen aus Shopify und einen kategorisierten Buchhaltungs-Export.</p>
+  <blockquote>iou.fm verbindet sich <strong>nicht</strong> direkt mit der Bank, sondern erzeugt eine Datei, die du im Online-Banking importierst – dadurch <strong>mit allen SEPA-fähigen Banken</strong> nutzbar. Alle Daten sind <strong>Ende-zu-Ende verschlüsselt</strong>; Löhne verlassen das Gerät nie.</blockquote>
+
+  <h2>2. Rollen im Überblick</h2>
+  <table>
+    <thead><tr><th>Funktion</th><th>Mitarbeiter</th><th>Admin</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td>Anmelden, Daten pflegen</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td>Erstattungen / Rechnungen erfassen</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td>Archiv ansehen</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td><strong>SEPA-Datei erstellen (auszahlen)</strong></td><td class="c">–</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td><strong>Löhne</strong> sehen & verarbeiten</td><td class="c">–</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td>Stammdaten (Konten, Benutzer, Module, Shopify, Buchhalter, Branding)</td><td class="c">–</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td>Rückbuchungen / Stornos-Export</td><td class="c">–</td><td class="c">✓</td><td class="c">✓</td></tr>
+      <tr><td>Owner-Modus (Live-Vorschau)</td><td class="c">–</td><td class="c">–</td><td class="c">✓</td></tr>
+      <tr><td>Support-Zugang zu Kundenkonten</td><td class="c">–</td><td class="c">–</td><td class="c">✓</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Mitarbeiter</strong> bereiten vor (kein Auszahlen, keine Löhne). <strong>Admin</strong> = Firmen-Vollzugriff. <strong>Owner</strong> = Gründer/Anbieter (zusätzlich Owner-Modus + Support).</p>
+
+  <h2>3. Erste Schritte</h2>
+  <h3>Installation</h3>
+  <ul>
+    <li>Aktuelle Version über die <a href="index.html">Download-Seite</a>.</li>
+    <li><strong>macOS:</strong> .dmg öffnen → iou.fm in „Programme". Erststart: Rechtsklick → „Öffnen" → „Öffnen". (Falls blockiert: Systemeinstellungen → Datenschutz &amp; Sicherheit → „Dennoch öffnen".)</li>
+    <li><strong>Windows:</strong> Setup-.exe → „Weitere Informationen" → „Trotzdem ausführen".</li>
+    <li>Updates kommen automatisch.</li>
+  </ul>
+  <h3>Anmelden</h3>
+  <p>Benutzername + Passwort. Das Passwort entschlüsselt deinen Tresor – <strong>bei Verlust nicht wiederherstellbar</strong>, sicher aufbewahren.</p>
+  <h3>Ersteinrichtung (Admin/Owner) — Stammdaten</h3>
+  <ol>
+    <li>Auftraggeberkonten anlegen (Firmen-IBAN; BIC wird geprüft/ergänzt).</li>
+    <li>Module wählen (Erstattungen oder Sammelüberweisung; optional „Rechnungen").</li>
+    <li>Benutzer anlegen.</li>
+    <li>Optional: Shopify, Buchhalter-Monatsversand, Darstellung.</li>
+  </ol>
+
+  <h2>4. Module – Schritt für Schritt</h2>
+  <h3>Löhne (Admin/Owner)</h3>
+  <ol><li>DATEV-PDF laden – Empfänger/IBAN/Betrag werden erkannt.</li><li>Zeilen prüfen.</li><li>Konto + Ausführungsdatum → SEPA-Datei erstellen.</li></ol>
+  <blockquote>Streng vertraulich: nur Admin/Owner, nie synchronisiert, nie im Archiv für Mitarbeiter.</blockquote>
+
+  <h3>Erstattungen / Sammelüberweisung</h3>
+  <ol><li>Bestellnummer → „Aus Shopify laden" oder „+ Leere Zeile".</li><li>Erstattungsart: Voll / Stornogebühr % / fester Betrag.</li><li>Internen Kommentar (Grund) eintragen.</li><li>Auswählen → SEPA-Datei erstellen (Admin/Owner).</li></ol>
+  <blockquote><strong>Doppelzahlungs-Schutz:</strong> bereits erstattete/stornierte Bestellung → rote Warnung; nur mit „Trotzdem hinzufügen".</blockquote>
+
+  <h3>Rechnungen</h3>
+  <ol><li>Rechnungs-PDFs laden (E-Rechnung exakt, sonst Mustererkennung).</li><li>Lieferanten-Gedächtnis füllt bekannte IBAN automatisch.</li><li>Prüfen → SEPA-Datei erstellen.</li></ol>
+  <blockquote>Doppelzahlungs-Schutz über die Rechnungsnummer. Optional: Fälligkeit → Ausführungsdatum, Skonto, Vier-Augen-Prinzip.</blockquote>
+
+  <h3>Rückbuchungen (Admin/Owner)</h3>
+  <p>Offene Chargebacks aus Shopify mit Status – fristgerecht widersprechen. KPI: offen/gewonnen/verloren/Gewinnquote, getrennt nach Anfragen und Rückbuchungen, plus Jahres-Historie. Nächtlich aktualisiert.</p>
+
+  <h3>Stornos &amp; Erstattungen (Admin/Owner)</h3>
+  <p>Aus Shopify abgeglichen, kategorisiert (Sport DE / Konzerte DE / Österreich / Reisen). Storno + Erstattung derselben Bestellung = eine Zeile (keine Doppelzählung). „Excel für Buchhaltung" exportiert nach Kategorie, inkl. Verwendungszweck und ursprünglich gezahltem Betrag.</p>
+
+  <h3>Archiv</h3>
+  <p>Historie aller SEPA-Dateien, filterbar. Export als DATEV-Buchungsstapel oder CSV (UTF-8, Umlaut-sicher).</p>
+
+  <h3>Stammdaten (Admin/Owner)</h3>
+  <p>Konten, Lieferanten, Benutzer; Module; Shopify-Anbindung (Read-only-Token + Tags); Buchhalter-Monatsversand (E-Mail + CC, automatisch am Monatsende 23:59, „Testmail jetzt senden"); Darstellung (White-Label).</p>
+
+  <h3>Owner-Modus (nur Owner)</h3>
+  <p>⚙︎ unten rechts: live umschalten zwischen Ansicht (Admin/Mitarbeiter), Auszahlungsmodus, Modulen, Live/Demo – reine Vorschau.</p>
+
+  <h3>Support-Zugang zu Kundenkonten (nur Owner)</h3>
+  <ol><li>Tab „Support": SUPPORT_KEY + Schlüsselpaar.</li><li>Zugang anfragen (Mandanten-ID, Umfang, Gültigkeit).</li><li>Kunde bestätigt in seiner App (befristeter E2E-Schlüssel).</li><li>„Konto öffnen" → Support-Sitzung; „beenden" führt zurück. Löhne bleiben ausgeschlossen.</li></ol>
+
+  <h2>5. SEPA-Datei in die Bank importieren</h2>
+  <ol>
+    <li>Online-Banking / Banking-Software öffnen (SFirm, StarMoney, Profi cash …).</li>
+    <li>Funktion „Sammelüberweisung" / „SEPA-Datei importieren" / „Datei-Upload" wählen.</li>
+    <li>Die erzeugte <code>.xml</code> (in „Downloads") hochladen.</li>
+    <li>Sammelüberweisung prüfen und mit TAN freigeben.</li>
+  </ol>
+  <blockquote>Mit allen SEPA-fähigen Banken. Lehnt eine Bank die Datei ab, kann der Anbieter die pain-Version (.03 statt .09) umstellen.</blockquote>
+
+  <h2>6. Schutz &amp; Sicherheit</h2>
+  <ul>
+    <li><strong>Ende-zu-Ende-Verschlüsselung</strong> – nur mit deinem Passwort lesbar.</li>
+    <li><strong>Löhne strikt lokal</strong> – nie synchronisiert, nie für Mitarbeiter sichtbar.</li>
+    <li><strong>Doppelzahlungs-Warnung</strong> bei bereits erstatteten/bezahlten Vorgängen.</li>
+    <li><strong>Vier-Augen-Prinzip</strong> – Mitarbeiter erfassen, nur Admins zahlen.</li>
+    <li><strong>IBAN-Prüfung</strong> + automatische BIC-Ableitung.</li>
+  </ul>
+
+  <h2>7. Häufige Fragen</h2>
+  <p><strong>App startet am Mac nicht?</strong> Erststart per Rechtsklick → „Öffnen". <br>
+  <strong>Updates?</strong> Automatisch. <br>
+  <strong>Sieht der Steuerberater alles?</strong> Nein, nur die Stornos/Erstattungen-CSV. <br>
+  <strong>Mehrere Personen gleichzeitig?</strong> Ja (außer Löhne, die bleiben lokal). <br>
+  <strong>Bestimmte Bank nötig?</strong> Nein – jede SEPA-fähige Bank mit Datei-Import.</p>
+
+  <footer>Bereitgestellt mit iou.fm · entwickelt von fork and merge UG</footer>
+</div>
+</body>
+</html>
