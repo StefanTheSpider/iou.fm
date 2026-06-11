@@ -39,7 +39,7 @@ function emptyRow(defaults = {}) {
   };
 }
 
-export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null, onAppRefunds = null }) {
+export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null, onAppRefunds = null, userName = "" }) {
   const isErstattung = profile !== "sammel";
   const cancelledSet = new Set((feed?.cancellations || []).map((c) => c.orderNumber));
   const cancelInfo = (num) => (feed?.cancellations || []).find((c) => c.orderNumber === String(num).replace(/^#/, ""));
@@ -77,7 +77,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     setRefunds((rs) => rs.filter((x) => x.id !== id));
     setConfirmDel(null);
   }
-  function addEmpty() { setRefunds((rs) => [emptyRow(isErstattung ? { mode: defMode, feePct: defFee } : { mode: "full" }), ...rs]); }
+  const stamp = () => ({ createdBy: userName || "—", createdAt: today() });
+  function addEmpty() { setRefunds((rs) => [{ ...emptyRow(isErstattung ? { mode: defMode, feePct: defFee } : { mode: "full" }), ...stamp() }, ...rs]); }
+  // Wie oft kommt eine Bestellnummer in der aktuellen Liste vor? (Dubletten-Hinweis)
+  const orderCounts = rows.reduce((m, r) => { const n = norm(r.orderNumber); if (n) m[n] = (m[n] || 0) + 1; return m; }, {});
 
   // IBAN live prüfen, aber Eingabe roh lassen (kein Desync, keine Meldung bei leer).
   async function onIbanChange(id, value) {
@@ -89,10 +92,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
 
   // Order als neue Zeile übernehmen (nach Prüfung/Bestätigung).
   function addRowFromOrder(o) {
-    setRefunds((rs) => [emptyRow({
+    setRefunds((rs) => [{ ...emptyRow({
       mode: defMode, feePct: defFee,
       row: { orderNumber: o.orderNumber, customerName: o.customerName, method: o.method || "ueberweisung", paid: (o.totalCents / 100).toFixed(2), currency: o.currency, purpose: o.suggestedPurpose },
-    }), ...rs]);
+    }), ...stamp() }, ...rs]);
     setOrderInput("");
   }
 
@@ -103,9 +106,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       const o = await fetchShopifyOrder({ domain: shopify.domain, token: shopify.token, orderNumber: num });
       const cancelled = cancelInfo(num);
       const refunded = refundedInfo(num);
-      if (cancelled || refunded) {
+      const inList = rows.some((x) => norm(x.orderNumber) === norm(o.orderNumber)); // schon in der Liste?
+      if (cancelled || refunded || inList) {
         // Doppelzahlungs-Schutz: erst bewusst bestätigen, sonst NICHT übernehmen.
-        setWarnOrder({ o, cancelled, refunded });
+        setWarnOrder({ o, cancelled, refunded, inList });
       } else {
         addRowFromOrder(o);
       }
@@ -280,8 +284,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                       <span className="pill">{methodLabel(r.method)}</span>
                       {r.refundViaSepa && r.method !== "ueberweisung" && <span className="pill warn">→ per Überweisung</span>}
                       {r.orderNumber && cancelledSet.has(String(r.orderNumber).replace(/^#/, "")) && <span className="pill bad" title="laut Shopify storniert">storniert</span>}
+                      {r.orderNumber && orderCounts[norm(r.orderNumber)] > 1 && <span className="pill bad" title="Bestellnummer mehrfach in dieser Liste">⚠ doppelt</span>}
                     </div>
                   )}
+                  {r.createdBy && <span className="muted" style={{ fontSize: 11 }}>erfasst von {r.createdBy}{r.createdAt ? ` · ${deDate(r.createdAt)}` : ""}</span>}
                 </div>
                 <div className="spacer" />
                 <div className="amt-wrap">
@@ -375,18 +381,20 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
 
 // Dicke Warnung: Bestellung wurde bereits erstattet/storniert -> Doppelzahlungs-Schutz.
 function AlreadyPaidModal({ info, onCancel, onConfirm }) {
-  const { o, cancelled, refunded } = info;
+  const { o, cancelled, refunded, inList } = info;
   const d = (x) => (x ? new Date(x).toLocaleDateString("de-DE") : "");
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onCancel}>
       <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f", boxShadow: "0 20px 60px rgba(0,0,0,.6)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>⚠️</div>
-        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Achtung – dieser Kunde hat schon Geld bekommen!</h2>
+        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Achtung – mögliche Doppelzahlung!</h2>
         <p style={{ fontSize: 15 }}>
-          Bestellung <strong>{o.orderNumber}</strong>{o.customerName ? <> ({o.customerName})</> : ""} wurde bereits
-          {refunded ? <> <strong>erstattet</strong>{refunded.amountCents ? <> über <strong>{formatEur(refunded.amountCents)}</strong></> : ""}{refunded.date ? <> am {d(refunded.date)}</> : ""} (Quelle: {refunded.source})</> : ""}
+          Bestellung <strong>{o.orderNumber}</strong>{o.customerName ? <> ({o.customerName})</> : ""}
+          {inList ? <> ist <strong>bereits in dieser Liste</strong></> : ""}
+          {inList && (refunded || cancelled) ? " und wurde zudem" : ""}
+          {refunded ? <> bereits <strong>erstattet</strong>{refunded.amountCents ? <> über <strong>{formatEur(refunded.amountCents)}</strong></> : ""}{refunded.date ? <> am {d(refunded.date)}</> : ""} (Quelle: {refunded.source})</> : ""}
           {refunded && cancelled ? " und" : ""}
-          {cancelled ? <> <strong>storniert</strong>{cancelled.date ? <> am {d(cancelled.date)}</> : ""}</> : ""}.
+          {cancelled ? <> bereits <strong>storniert</strong>{cancelled.date ? <> am {d(cancelled.date)}</> : ""}</> : ""}.
         </p>
         <p className="note" style={{ fontSize: 14 }}>
           Wenn du sie erneut hinzufügst, riskierst du eine <strong>Doppel-Erstattung</strong>. Das kommt vor – aber bitte nur bewusst.

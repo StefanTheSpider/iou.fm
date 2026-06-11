@@ -337,9 +337,9 @@ export default function App() {
         ) : (
           <>
             {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} />}
-            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} />}
+            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} userName={session.currentUser.username} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={effUpdateData} />}
-            {tab === "rechnungen" && rechnungZahlungOn && <Rechnungen data={data} updateData={effUpdateData} canPay={isAdmin} />}
+            {tab === "rechnungen" && rechnungZahlungOn && <Rechnungen data={data} updateData={effUpdateData} canPay={isAdmin} userName={session.currentUser.username} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}

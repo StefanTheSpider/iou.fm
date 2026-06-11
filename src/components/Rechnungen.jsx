@@ -10,7 +10,7 @@ const norm = (n) => String(n ?? "").trim();
 
 // Rechnungs-Modul: PDFs einlesen -> Zahlungsdaten prüfen -> eine SEPA-Datei.
 // Standard ohne KI: E-Rechnung/Heuristik + Lieferanten-Gedächtnis + Review.
-export default function Rechnungen({ data, updateData, canPay = true }) {
+export default function Rechnungen({ data, updateData, canPay = true, userName = "" }) {
   const accounts = data.accounts || [];
   const rows = data.invoices || [];
   const creditors = data.creditors || {};          // IBAN -> { name, bic }
@@ -63,6 +63,7 @@ export default function Rechnungen({ data, updateData, canPay = true }) {
           invoiceNumber, dueDate: ex.dueDate || "",
           purpose: `Rechnung ${invoiceNumber}${creditorName ? " " + creditorName : ""}`.trim(),
           skontoPct: "", note: "", status: "offen", selected: true,
+          createdBy: userName || "—", createdAt: today(),
         };
         // eslint-disable-next-line no-loop-func
         setInvoices((rs) => [row, ...rs]);
@@ -171,6 +172,7 @@ export default function Rechnungen({ data, updateData, canPay = true }) {
             <strong>{r.creditorName || "— Lieferant —"}</strong>
             <span className="pill">{r.source === "e-rechnung" ? "E-Rechnung" : "PDF"}</span>
             {r.invoiceNumber && <span className="note">Nr. {r.invoiceNumber}</span>}
+            {r.createdBy && <span className="note">· erfasst von {r.createdBy}</span>}
             <div className="spacer" />
             <span className="refund-amount ok">{formatEur(cents)}</span>
             <span className={`pill ${r.status === "offen" ? "warn" : "ok"}`}>{r.status}</span>
