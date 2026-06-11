@@ -583,6 +583,8 @@ const server = http.createServer(async (req, res) => {
           event: String(r.event || "").slice(0, 160),
           category: String(r.category || "").slice(0, 40),
           amountCents: Math.round(Number(r.amountCents) || 0),
+          paidCents: Math.round(Number(r.paidCents) || 0),
+          purpose: String(r.purpose || "").slice(0, 200),
           date: String(r.date || "").slice(0, 30),
           currency: String(r.currency || "EUR").slice(0, 8),
         })).filter((r) => r.amountCents > 0);

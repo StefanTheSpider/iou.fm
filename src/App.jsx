@@ -4,6 +4,7 @@ import Stammdaten from "./components/Stammdaten.jsx";
 import Lohn from "./components/Lohn.jsx";
 import Erstattungen from "./components/Erstattungen.jsx";
 import Rechnungspruefung from "./components/Rechnungspruefung.jsx";
+import Rechnungen from "./components/Rechnungen.jsx";
 import Archiv from "./components/Archiv.jsx";
 import Setup from "./components/Setup.jsx";
 import Footer from "./components/Footer.jsx";
@@ -213,7 +214,7 @@ export default function App() {
         const m = String(p.purpose || "").match(/^Erstattung\s+(\S+)\s*(.*)$/i);
         summaries.push({
           orderNumber: m ? m[1].replace(/^#/, "") : "", customer: p.name || "",
-          event: m ? m[2].trim() : "", amountCents: p.amountCents, date, currency: "EUR",
+          event: m ? m[2].trim() : "", purpose: p.purpose || "", amountCents: p.amountCents, date, currency: "EUR",
         });
       }
     }
@@ -277,6 +278,7 @@ export default function App() {
   const setupDone = !!data.config?.setupComplete;
   const isAdmin = (session.currentUser.role === "admin") && !ov.asUser;
   const rechnungOn = ov.rechnung != null ? ov.rechnung : !!data.config?.modules?.rechnung;
+  const rechnungZahlungOn = !!data.config?.modules?.rechnungZahlung;
   const Brand = () => branding.logoUrl
     ? <img className="logo-img" src={branding.logoUrl} alt={branding.productName} />
     : <>{branding.brandText}<span>{branding.brandAccent}</span></>;
@@ -291,6 +293,7 @@ export default function App() {
             {isAdmin && <button className={`tab ${tab === "lohn" ? "active" : ""}`} onClick={() => setTab("lohn")}>Löhne</button>}
             <button className={`tab ${tab === "erstattung" ? "active" : ""}`} onClick={() => setTab("erstattung")}>{payoutLabel}</button>
             {rechnungOn && <button className={`tab ${tab === "rechnung" ? "active" : ""}`} onClick={() => setTab("rechnung")}>Rechnungsprüfung</button>}
+            {rechnungZahlungOn && <button className={`tab ${tab === "rechnungen" ? "active" : ""}`} onClick={() => setTab("rechnungen")}>Rechnungen</button>}
             <button className={`tab ${tab === "anfragen" ? "active" : ""}`} onClick={() => setTab("anfragen")}>Rückbuchungen</button>
             <button className={`tab ${tab === "stornos" ? "active" : ""}`} onClick={() => setTab("stornos")}>Stornos</button>
             <button className={`tab ${tab === "archiv" ? "active" : ""}`} onClick={() => setTab("archiv")}>Archiv</button>
@@ -336,6 +339,7 @@ export default function App() {
             {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} />}
             {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={effUpdateData} />}
+            {tab === "rechnungen" && rechnungZahlungOn && <Rechnungen data={data} updateData={effUpdateData} canPay={isAdmin} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}

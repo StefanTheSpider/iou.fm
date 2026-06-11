@@ -81,7 +81,7 @@ export function extractEvents(order, tagCfg, since) {
   }
   for (const r of order.refunds || []) {
     if (after(r.createdAt, since) && r.amountCents > 0) {
-      refunds.push({ ...base, date: r.createdAt, amountCents: r.amountCents, refundId: r.id,
+      refunds.push({ ...base, date: r.createdAt, amountCents: r.amountCents, paidCents: order.totalCents, refundId: r.id,
         gateway: (order.gateways[0] || "").toLowerCase() });
     }
   }

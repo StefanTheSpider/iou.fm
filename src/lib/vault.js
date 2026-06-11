@@ -17,7 +17,7 @@ const ITER = 310000;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], batches: [], shopify: {}, branding: {}, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false } } };
+export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], shopify: {}, branding: {}, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false } } };
 
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -73,7 +73,7 @@ export async function syncDecryptRaw(session, blob) {
 }
 
 // --- Daten-Split (Löhne bleiben lokal) ---------------------------------------
-const SHARED_KEYS = ["accounts", "suppliers", "refunds", "shopify", "branding", "config"];
+const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config"];
 export function sharedSubset(data) {
   const out = {};
   for (const k of SHARED_KEYS) out[k] = data[k];
@@ -90,6 +90,8 @@ export function mergeShared(localData, shared) {
     accounts: unionById(localData.accounts, shared.accounts),
     suppliers: unionById(localData.suppliers, shared.suppliers),
     refunds: unionById(localData.refunds, shared.refunds),
+    invoices: unionById(localData.invoices, shared.invoices),
+    creditors: { ...(localData.creditors || {}), ...(shared.creditors || {}) },
     shopify: shared.shopify ?? localData.shopify,
     branding: shared.branding ?? localData.branding,
     config: { ...(localData.config || {}), ...(shared.config || {}) },

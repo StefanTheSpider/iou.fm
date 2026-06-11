@@ -174,7 +174,9 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         orderNumber: String(r.orderNumber || "").replace(/^#/, ""),
         customer: r.customerName,
         event: String(r.purpose || "").replace(/^Erstattung\s+\S+\s*/i, "").trim(),
-        amountCents: refund.refundCents, date: execDate, currency: r.currency || "EUR",
+        purpose: r.purpose || "",
+        amountCents: refund.refundCents, paidCents: parseAmount(r.paid).cents,
+        date: execDate, currency: r.currency || "EUR",
       })).filter((s) => s.amountCents > 0);
       if (summaries.length) onAppRefunds(summaries);
     }

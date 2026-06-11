@@ -106,30 +106,47 @@ export function Anfragen({ feed, onRefresh, busy }) {
 // ---- Tab: Stornos & Erstattungen (Shopify) + Buchhaltungs-Export -----------
 const CATS = ["Sport DE", "Konzerte DE", "Österreich", "Reisen", "Unzugeordnet"];
 
+const eurCsv = (c) => (Math.round(c || 0) / 100).toFixed(2).replace(".", ",");
+
+// Eine Zeile pro Vorgang, ohne Doppelzählung: Storno+Refund derselben Bestellung
+// => "Storniert & erstattet" (nur die Erstattung zählt). + App/SEPA-Erstattungen.
+function combinedRows(feed) {
+  const cancels = feed?.cancellations || [];
+  const refunds = feed?.refunds || [];
+  const appR = feed?.appRefunds || [];
+  const cancelled = new Set(cancels.map((c) => c.orderNumber));
+  const refunded = new Set(refunds.map((r) => r.orderNumber));
+  return [
+    ...refunds.map((r) => ({ art: cancelled.has(r.orderNumber) ? "Storniert & erstattet" : "Erstattung",
+      event: r.event, date: r.date, customer: r.customer, orderNumber: r.orderNumber, category: r.category,
+      amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || "" })),
+    ...cancels.filter((c) => !refunded.has(c.orderNumber)).map((c) => ({ art: "Stornierung",
+      event: c.event, date: c.date, customer: c.customer, orderNumber: c.orderNumber, category: c.category,
+      amountCents: c.amountCents, paidCents: c.amountCents, purpose: "" })),
+    ...appR.map((r) => ({ art: "Erstattung (App/SEPA)", event: r.event, date: r.date, customer: r.customer,
+      orderNumber: r.orderNumber, category: r.category || "Unzugeordnet", amountCents: r.amountCents,
+      paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || "" })),
+  ];
+}
+
 export function Stornos({ feed, canPay, onRefresh, busy }) {
   const [art, setArt] = useState("alle");
   const [cat, setCat] = useState("alle");
-  const cancellations = (feed?.cancellations || []).map((c) => ({ ...c, art: "Stornierung" }));
-  const refunds = (feed?.refunds || []).map((r) => ({ ...r, art: "Erstattung" }));
-  // In iou.fm per SEPA erstattete Fälle (z. B. Klarna/PayPal) – für USt-Korrektur.
-  const appRefunds = (feed?.appRefunds || []).map((r) => ({ ...r, art: "Erstattung (App/SEPA)", category: r.category || "Unzugeordnet" }));
-  const all = [...cancellations, ...refunds, ...appRefunds]
+  const combined = combinedRows(feed);
+  const all = combined
     .filter((r) => (art === "alle" || r.art === art) && (cat === "alle" || r.category === cat))
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const sum = all.reduce((s, r) => s + (r.amountCents || 0), 0);
 
   function exportIrina() {
-    const rows = [...cancellations, ...refunds, ...appRefunds];
     const wb = XLSX.utils.book_new();
     for (const c of CATS) {
-      const data = rows.filter((r) => r.category === c).sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+      const data = combined.filter((r) => r.category === c).sort((a, b) => (a.date || "").localeCompare(b.date || ""))
         .map((r) => ({
-          Art: r.art,
-          Veranstaltung: r.event,
-          Datum: deDate(r.date),
-          Kunde: r.customer,
-          Bestellnummer: r.orderNumber,
-          "Betrag (EUR)": (r.amountCents / 100).toFixed(2).replace(".", ","),
+          Art: r.art, Veranstaltung: r.event, Datum: deDate(r.date), Kunde: r.customer,
+          Bestellnummer: r.orderNumber, Verwendungszweck: r.purpose,
+          "Urspr. gezahlt (EUR)": eurCsv(r.paidCents),
+          "Erstattet/Storniert (EUR)": eurCsv(r.amountCents),
         }));
       if (!data.length && c === "Unzugeordnet") continue;
       const ws = XLSX.utils.json_to_sheet(data.length ? data : [{ Hinweis: "keine Einträge im Zeitraum" }]);
@@ -141,17 +158,21 @@ export function Stornos({ feed, canPay, onRefresh, busy }) {
   return (
     <div>
       <h1>Stornos &amp; Erstattungen</h1>
-      <p className="sub">Aus Shopify abgeglichene Stornierungen und Rückerstattungen (mit echtem Datum/Betrag), kategorisiert für die Buchhaltung.</p>
+      <p className="sub">Aus Shopify abgeglichene Stornierungen und Rückerstattungen (mit echtem Datum/Betrag), kategorisiert für die Buchhaltung. Storno + Erstattung derselben Bestellung erscheinen als <em>eine</em> Zeile (keine Doppelzählung).</p>
       <div className="summary-bar">
         <div className="stat"><div className="num">{all.length}</div><div className="lbl">Einträge</div></div>
-        <div className="stat"><div className="num">{formatEur(sum)}</div><div className="lbl">Summe</div></div>
+        <div className="stat"><div className="num">{formatEur(sum)}</div><div className="lbl">Summe erstattet/storniert</div></div>
         <div className="spacer" style={{ flex: 1 }} />
-        {canPay && <button className="btn" onClick={exportIrina} disabled={!cancellations.length && !refunds.length && !appRefunds.length}>Excel für Buchhaltung</button>}
+        {canPay && <button className="btn" onClick={exportIrina} disabled={!combined.length}>Excel für Buchhaltung</button>}
       </div>
       <div className="toolbar">
         <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Art
           <select value={art} onChange={(e) => setArt(e.target.value)}>
-            <option value="alle">alle</option><option value="Stornierung">Stornierungen</option><option value="Erstattung">Erstattungen (Shopify)</option><option value="Erstattung (App/SEPA)">Erstattungen (App/SEPA)</option>
+            <option value="alle">alle</option>
+            <option value="Stornierung">Stornierungen</option>
+            <option value="Erstattung">Erstattungen (Shopify)</option>
+            <option value="Storniert & erstattet">Storniert &amp; erstattet</option>
+            <option value="Erstattung (App/SEPA)">Erstattungen (App/SEPA)</option>
           </select>
         </label>
         <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Kategorie
@@ -165,17 +186,19 @@ export function Stornos({ feed, canPay, onRefresh, busy }) {
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Datum</th><th>Art</th><th>Veranstaltung</th><th>Kunde</th><th>Bestellnr.</th><th>Kategorie</th><th className="amount">Betrag</th></tr></thead>
+          <thead><tr><th>Datum</th><th>Art</th><th>Veranstaltung</th><th>Kunde</th><th>Bestellnr.</th><th>Kategorie</th><th>Verwendungszweck</th><th className="amount">Urspr. gezahlt</th><th className="amount">Erstattet/Storno</th></tr></thead>
           <tbody>
             {all.map((r, i) => (
               <tr key={r.orderNumber + "-" + r.art + "-" + i}>
                 <td>{deDate(r.date)}</td>
                 <td><span className={`pill ${r.art === "Stornierung" ? "warn" : "ok"}`}>{r.art}</span></td>
                 <td>{r.event}</td><td>{r.customer}</td><td className="mono">{r.orderNumber}</td><td>{r.category}</td>
+                <td>{r.purpose}</td>
+                <td className="amount">{formatEur(r.paidCents)}</td>
                 <td className="amount">{formatEur(r.amountCents)}</td>
               </tr>
             ))}
-            {all.length === 0 && <tr><td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>Noch kein Abgleich – unter Stammdaten Shopify + Tags hinterlegen und „Jetzt abgleichen".</td></tr>}
+            {all.length === 0 && <tr><td colSpan={9} className="muted" style={{ textAlign: "center", padding: 24 }}>Noch kein Abgleich – unter Stammdaten Shopify + Tags hinterlegen und „Jetzt abgleichen".</td></tr>}
           </tbody>
         </table>
       </div>

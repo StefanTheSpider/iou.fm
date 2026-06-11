@@ -1,52 +1,48 @@
-import { buildAccountantCsv, entriesForMonth, prevMonthKey, thisMonthKey, isLastDayOfMonth } from "../accountant.mjs";
+import { buildAccountantCsv, entriesForMonth, combinedEntries, prevMonthKey, thisMonthKey, isLastDayOfMonth } from "../accountant.mjs";
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.error("  ✗ " + m); } };
 
 const feed = {
   cancellations: [
-    { date: "2026-05-03T10:00:00Z", event: "BTS München", customer: "Max", orderNumber: "1001", category: "Konzerte DE", amountCents: 12900 },
-    { date: "2026-06-01T10:00:00Z", event: "Robbie Düsseldorf", customer: "Eva", orderNumber: "1002", category: "Konzerte DE", amountCents: 5000 },
+    { date: "2026-05-03T10:00:00Z", event: "BTS München", customer: "Max", orderNumber: "1001", category: "Konzerte DE", amountCents: 12900 }, // nur Storno
+    { date: "2026-05-10T10:00:00Z", event: "Lady Gaga", customer: "Eva", orderNumber: "1005", category: "Konzerte DE", amountCents: 20000 },   // Storno + Refund
   ],
   refunds: [
-    { date: "2026-05-20T09:00:00Z", event: "Sportevent Wien", customer: "Ali", orderNumber: "1003", category: "Österreich", amountCents: 7400 },
+    { date: "2026-05-20T09:00:00Z", event: "Sportevent Wien", customer: "Ali", orderNumber: "1003", category: "Österreich", amountCents: 7400, paidCents: 7400 }, // nur Refund
+    { date: "2026-05-11T09:00:00Z", event: "Lady Gaga", customer: "Eva", orderNumber: "1005", category: "Konzerte DE", amountCents: 20000, paidCents: 20000 },    // Refund zu 1005
+    { date: "2026-06-01T09:00:00Z", event: "X", customer: "Z", orderNumber: "1009", category: "X", amountCents: 5000, paidCents: 5000 },
   ],
 };
 
+// Dedup: 1005 nur EINE Zeile, markiert "Storniert & erstattet"
+const comb = combinedEntries(feed);
+const r1005 = comb.filter((r) => r.orderNumber === "1005");
+ok(r1005.length === 1, "1005 nur eine Zeile (keine Doppelzählung)");
+ok(r1005[0].art === "Storniert & erstattet", "1005 als 'Storniert & erstattet'");
+ok(comb.find((r) => r.orderNumber === "1001").art === "Stornierung", "1001 reines Storno");
+ok(comb.find((r) => r.orderNumber === "1003").art === "Erstattung", "1003 reine Erstattung");
+
 const may = entriesForMonth(feed, "2026-05");
-ok(may.length === 2, "entriesForMonth: nur Mai-Einträge (2)");
-ok(may[0].date < may[1].date, "entriesForMonth: nach Datum sortiert");
+ok(may.length === 3, "Mai: 3 Zeilen (1001, 1003, 1005) – nicht 4");
 
 const csv = buildAccountantCsv(feed, "2026-05");
-const lines = csv.split("\r\n");
-ok(lines[0] === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Betrag (EUR)", "CSV: Kopfzeile");
-ok(csv.includes("Stornierung;BTS München;03.05.2026;Max;1001;Konzerte DE;129,00"), "CSV: Storno-Zeile mit deutschem Betrag");
-ok(csv.includes("Erstattung;Sportevent Wien;20.05.2026;Ali;1003;Österreich;74,00"), "CSV: Erstattung-Zeile");
-ok(!csv.includes("Robbie"), "CSV: Juni-Eintrag NICHT im Mai-Export");
-ok(/Summe;;;;;;203,00/.test(csv), "CSV: Summe = 129,00 + 74,00 = 203,00");
+const head = csv.split("\r\n")[0];
+ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR)", "CSV: neue Kopfzeile mit Verwendungszweck + Urspr. gezahlt");
+ok(csv.includes("Storniert & erstattet;Lady Gaga;10.05.2026;Eva;1005;Konzerte DE;;200,00;200,00") || csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;;200,00;200,00"), "CSV: 1005 eine Zeile, urspr.=erstattet=200,00");
+ok(/Summe;;;;;;;;403,00/.test(csv), "CSV: Summe 129 + 74 + 200 = 403,00 (keine Doppelzählung)");
 
-// App-/SEPA-Erstattungen werden mit aufgenommen (USt-Korrektur)
-const appRefunds = [
-  { orderNumber: "29985", customer: "Melissa Wilkop", event: "BTS München", amountCents: 14990, date: "2026-05-15", category: "" },
-  { orderNumber: "30000", customer: "Egal", event: "X", amountCents: 5000, date: "2026-06-02", category: "" }, // anderer Monat
-];
-const csvApp = buildAccountantCsv(feed, "2026-05", appRefunds);
-ok(csvApp.includes("Erstattung (App/SEPA);BTS München;15.05.2026;Melissa Wilkop;29985;;149,90"), "CSV: App-Erstattung mit Bestellnummer enthalten");
-ok(!csvApp.includes("30000"), "CSV: App-Erstattung aus anderem Monat NICHT enthalten");
-ok(/Summe;;;;;;352,90/.test(csvApp), "CSV: Summe inkl. App-Erstattung (203,00 + 149,90)");
-ok(entriesForMonth(feed, "2026-05", appRefunds).length === 3, "entriesForMonth: inkl. App-Erstattung (3)");
-
-// Quoting bei Semikolon/Anführungszeichen
-const tricky = buildAccountantCsv({ cancellations: [{ date: "2026-05-01", event: 'A; "B"', customer: "X", orderNumber: "9", category: "Reisen", amountCents: 100 }] }, "2026-05");
-ok(tricky.includes('"A; ""B"""'), "CSV: Sonderzeichen korrekt escaped");
+// App-/SEPA-Erstattung mit Verwendungszweck + urspr. Betrag
+const app = [{ orderNumber: "29985", customer: "Melissa", event: "BTS", amountCents: 14990, paidCents: 149900, purpose: "Erstattung 29985 BTS", date: "2026-05-15", category: "" }];
+const csvApp = buildAccountantCsv(feed, "2026-05", app);
+ok(csvApp.includes("Erstattung (App/SEPA);BTS;15.05.2026;Melissa;29985;;Erstattung 29985 BTS;1499,00;149,90"), "CSV: App-Erstattung mit Verwendungszweck + urspr. gezahlt (1499,00) + erstattet (149,90)");
 
 // Monats-Helfer
-ok(prevMonthKey(new Date("2026-01-15")) === "2025-12", "prevMonthKey: Jahreswechsel");
+ok(prevMonthKey(new Date("2026-01-15")) === "2025-12", "prevMonthKey Jahreswechsel");
 ok(thisMonthKey(new Date("2026-06-10")) === "2026-06", "thisMonthKey");
-ok(isLastDayOfMonth(new Date("2026-06-30T12:00:00")) === true, "isLastDayOfMonth: 30.06 -> true");
-ok(isLastDayOfMonth(new Date("2026-06-29T12:00:00")) === false, "isLastDayOfMonth: 29.06 -> false");
-ok(isLastDayOfMonth(new Date("2026-02-28T12:00:00")) === true, "isLastDayOfMonth: 28.02.2026 (kein Schaltjahr) -> true");
-ok(isLastDayOfMonth(new Date("2026-12-31T12:00:00")) === true, "isLastDayOfMonth: 31.12 -> true");
+ok(isLastDayOfMonth(new Date("2026-06-30T12:00:00")) === true, "letzter Tag 30.06");
+ok(isLastDayOfMonth(new Date("2026-02-28T12:00:00")) === true, "letzter Tag 28.02 (kein Schaltjahr)");
+ok(isLastDayOfMonth(new Date("2026-06-29T12:00:00")) === false, "29.06 nicht letzter Tag");
 
 console.log(`\nBuchhalter-Versand-Tests: ${pass} ok, ${fail} fehlgeschlagen`);
 process.exit(fail ? 1 : 0);

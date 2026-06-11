@@ -53,6 +53,7 @@ export default function Archiv({ data, canPay = false }) {
               <option value="alle">alle</option>
               <option value="erstattung">Erstattungen</option>
               <option value="sammel">Sammelüberweisung</option>
+              <option value="rechnung">Rechnungen</option>
             </select>
           </label>
           <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>von

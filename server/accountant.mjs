@@ -8,29 +8,55 @@ const csvCell = (s) => {
   return /[";\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 };
 
-// Liefert die Einträge (Stornos + Shopify-Erstattungen + App-/SEPA-Erstattungen)
-// eines Monats "YYYY-MM". appRefunds = im iou.fm per Überweisung erstattete Fälle.
+// Kombiniert Stornos + Shopify-Erstattungen + App-/SEPA-Erstattungen zu EINER
+// Zeile pro Vorgang – ohne Doppelzählung: ist eine Bestellung storniert UND
+// erstattet, erscheint nur die Erstattung (das echte Geldereignis), markiert als
+// „Storniert & erstattet". Reines Storno (ohne Refund) bleibt als „Stornierung".
+export function combinedEntries(feed, appRefunds = []) {
+  const cancels = feed?.cancellations || [];
+  const refunds = feed?.refunds || [];
+  const cancelledOrders = new Set(cancels.map((c) => c.orderNumber));
+  const refundedOrders = new Set(refunds.map((r) => r.orderNumber));
+  const rows = [];
+  for (const r of refunds) {
+    rows.push({
+      art: cancelledOrders.has(r.orderNumber) ? "Storniert & erstattet" : "Erstattung",
+      event: r.event, date: r.date, customer: r.customer, orderNumber: r.orderNumber,
+      category: r.category, amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || "",
+    });
+  }
+  for (const c of cancels) {
+    if (refundedOrders.has(c.orderNumber)) continue; // schon über die Erstattung abgebildet
+    rows.push({
+      art: "Stornierung", event: c.event, date: c.date, customer: c.customer, orderNumber: c.orderNumber,
+      category: c.category, amountCents: c.amountCents, paidCents: c.amountCents, purpose: "",
+    });
+  }
+  for (const a of (appRefunds || [])) {
+    rows.push({
+      art: "Erstattung (App/SEPA)", event: a.event, date: a.date, customer: a.customer, orderNumber: a.orderNumber,
+      category: a.category || "", amountCents: a.amountCents, paidCents: a.paidCents ?? a.amountCents, purpose: a.purpose || "",
+    });
+  }
+  return rows;
+}
 export function entriesForMonth(feed, ym, appRefunds = []) {
-  const rows = [
-    ...(feed?.cancellations || []).map((c) => ({ art: "Stornierung", ...c })),
-    ...(feed?.refunds || []).map((r) => ({ art: "Erstattung", ...r })),
-    ...(appRefunds || []).map((r) => ({ art: "Erstattung (App/SEPA)", ...r })),
-  ];
-  return rows
+  return combinedEntries(feed, appRefunds)
     .filter((r) => String(r.date || "").slice(0, 7) === ym)
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 }
 
 // CSV (deutsch: ; getrennt, Komma als Dezimal) für die Buchhaltung.
 export function buildAccountantCsv(feed, ym, appRefunds = []) {
-  const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Betrag (EUR)"];
+  const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Verwendungszweck", "Urspr. gezahlt (EUR)", "Erstattet/Storniert (EUR)"];
   const entries = entriesForMonth(feed, ym, appRefunds);
   const rows = entries.map((r) => [
-    r.art, r.event || "", deDate(r.date), r.customer || "", r.orderNumber || "", r.category || "", eur(r.amountCents),
+    r.art, r.event || "", deDate(r.date), r.customer || "", r.orderNumber || "", r.category || "",
+    r.purpose || "", eur(r.paidCents), eur(r.amountCents),
   ]);
   const sum = entries.reduce((s, r) => s + (r.amountCents || 0), 0);
   rows.push([]);
-  rows.push(["Summe", "", "", "", "", "", eur(sum)]);
+  rows.push(["Summe", "", "", "", "", "", "", "", eur(sum)]);
   return [head, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
 }
 

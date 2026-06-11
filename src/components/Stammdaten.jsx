@@ -123,9 +123,17 @@ function Suppliers({ data, updateData }) {
 function ModuleConfig({ data, updateData }) {
   const mode = data.config?.payoutMode || "erstattung";
   const rechnung = !!data.config?.modules?.rechnung;
+  const rechnungZahlung = !!data.config?.modules?.rechnungZahlung;
+  const iopts = data.config?.invoiceOpts || {};
   const setMode = (m) => updateData((d) => ({ ...d, config: { ...(d.config || {}), payoutMode: m } }));
   const toggleRechnung = (on) => updateData((d) => ({
     ...d, config: { ...(d.config || {}), modules: { ...((d.config || {}).modules || {}), rechnung: on } },
+  }));
+  const toggleZahlung = (on) => updateData((d) => ({
+    ...d, config: { ...(d.config || {}), modules: { ...((d.config || {}).modules || {}), rechnungZahlung: on } },
+  }));
+  const setIopt = (k, v) => updateData((d) => ({
+    ...d, config: { ...(d.config || {}), invoiceOpts: { ...((d.config || {}).invoiceOpts || {}), [k]: v } },
   }));
   return (
     <div className="card">
@@ -141,6 +149,23 @@ function ModuleConfig({ data, updateData }) {
         <input type="checkbox" checked={rechnung} onChange={(e) => toggleRechnung(e.target.checked)} />
         <span><strong>Rechnungsprüfung</strong> aktivieren – Rechnungen gegen die tatsächlich angenommene Ware abgleichen, freigegebenen Betrag in die Sammelüberweisung übernehmen (z. B. Gastronomie/Lieferanten).</span>
       </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <input type="checkbox" checked={rechnungZahlung} onChange={(e) => toggleZahlung(e.target.checked)} />
+        <span><strong>Rechnungen (Zahlungen)</strong> aktivieren – Rechnungs-PDFs einlesen (E-Rechnung/Mustererkennung + Lieferanten-Gedächtnis) und als SEPA-Datei auszahlen.</span>
+      </label>
+      {rechnungZahlung && (
+        <div style={{ margin: "8px 0 0 30px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={!!iopts.useDueDate} onChange={(e) => setIopt("useDueDate", e.target.checked)} />
+            <span className="note" style={{ margin: 0 }}>Fälligkeitsdatum nutzen (steuert das SEPA-Ausführungsdatum)</span></label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={!!iopts.skonto} onChange={(e) => setIopt("skonto", e.target.checked)} />
+            <span className="note" style={{ margin: 0 }}>Skonto-Abzug je Rechnung erlauben</span></label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={!!iopts.approval} onChange={(e) => setIopt("approval", e.target.checked)} />
+            <span className="note" style={{ margin: 0 }}>Vier-Augen-Prinzip (nur Admin erstellt die SEPA-Datei)</span></label>
+        </div>
+      )}
     </div>
   );
 }

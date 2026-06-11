@@ -4,7 +4,7 @@
 //    Mandantennummer kommen aus der Konfiguration; die genauen Sachkonten bitte
 //    mit dem Steuerberater abstimmen (SKR03/04 unterschiedlich).
 
-const KIND_LABEL = { lohn: "Lohn/Gehalt", erstattung: "Erstattung", sammel: "Sammelüberweisung" };
+const KIND_LABEL = { lohn: "Lohn/Gehalt", erstattung: "Erstattung", sammel: "Sammelüberweisung", rechnung: "Rechnung" };
 export const kindLabel = (k) => KIND_LABEL[k] || k || "";
 
 const eur = (cents) => (Math.round(cents || 0) / 100).toFixed(2).replace(".", ",");
@@ -40,7 +40,7 @@ export function toCsv(rows) {
   return "﻿" + lines.join("\r\n");
 }
 
-const KONTO_KEY = { lohn: "kontoLohn", erstattung: "kontoErstattung", sammel: "kontoSammel" };
+const KONTO_KEY = { lohn: "kontoLohn", erstattung: "kontoErstattung", sammel: "kontoSammel", rechnung: "kontoRechnung" };
 
 function datevStamp() {
   const d = new Date(), p = (n, l = 2) => String(n).padStart(l, "0");
