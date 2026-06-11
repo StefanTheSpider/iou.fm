@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iou.fm — IBAN · Order · Überweisung</title>
+<meta name="description" content="iou.fm – sichere, Ende-zu-Ende-verschlüsselte SEPA-Zahlungs-App für Löhne und Erstattungen. Für macOS und Windows herunterladen." />
+<link rel="icon" type="image/png" href="favicon.png" />
+<style>
+  :root{
+    --bg:#0E1116; --panel:#161b22; --border:#2a313c; --text:#e9eef5; --muted:#9aa6b2;
+    --gold:#d9b25a; --gold-press:#c79e44; --ink:#241a05;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--gold);text-decoration:none}
+  .wrap{max-width:840px;margin:0 auto;padding:0 22px}
+  header{padding:30px 0 8px;display:flex;align-items:center;justify-content:space-between}
+  .brand img{height:30px;display:block}
+  .hero .logo{height:84px;margin:0 auto 26px;display:block;max-width:90%}
+  .ghostlink{font-size:14px;color:var(--muted)}
+  .hero{text-align:center;padding:54px 0 26px}
+  .hero h1{font-size:40px;line-height:1.1;margin:0 0 14px;letter-spacing:-1px}
+  .hero p.sub{font-size:18px;color:var(--muted);max-width:620px;margin:0 auto 8px}
+  .tag{display:inline-block;margin-top:14px;font-size:13px;color:var(--gold);border:1px solid var(--border);border-radius:999px;padding:5px 12px}
+  .downloads{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:34px 0 10px}
+  .dl{display:flex;flex-direction:column;gap:4px;align-items:center;min-width:230px;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px 22px;transition:.15s}
+  .dl:hover{border-color:var(--gold);transform:translateY(-2px)}
+  .dl .os{font-size:15px;font-weight:700}
+  .dl .btn{margin-top:10px;background:var(--gold);color:var(--ink);font-weight:800;border:none;border-radius:10px;padding:11px 20px;font-size:15px;cursor:pointer;width:100%}
+  .dl .btn:hover{background:var(--gold-press)}
+  .dl .hint{font-size:12px;color:var(--muted)}
+  .dl.primary{outline:2px solid var(--gold);outline-offset:2px}
+  .ver{text-align:center;color:var(--muted);font-size:14px;margin:6px 0 0}
+  .section{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:22px 24px;margin:28px 0}
+  .section h2{margin:0 0 12px;font-size:17px}
+  .steps{margin:0;padding-left:20px;color:var(--muted);font-size:14.5px;line-height:1.7}
+  .steps strong{color:var(--text)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}.hero h1{font-size:32px}}
+  footer{text-align:center;color:var(--muted);font-size:13px;padding:30px 0 50px}
+  footer a{color:var(--muted);text-decoration:underline}
+  .badges{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><img src="iou-logo-gold.png" alt="iou.fm" /></div>
+    <a class="ghostlink" href="https://github.com/StefanTheSpider/iou.fm/releases" target="_blank" rel="noopener">Alle Versionen ↗</a>
+  </header>
+
+  <section class="hero">
+    <img class="logo" src="iou-logo-gold.png" alt="iou.fm" />
+    <h1>Löhne &amp; Erstattungen.<br>Sicher per SEPA.</h1>
+    <p class="sub">iou.fm erstellt SEPA-Überweisungen für Gehälter und Rückerstattungen – Ende-zu-Ende verschlüsselt, direkt auf deinem Rechner.</p>
+    <div class="tag">IBAN · Order · Überweisung</div>
+
+    <div class="downloads" id="downloads">
+      <div class="dl" id="dl-mac">
+        <div class="os">macOS</div>
+        <div class="hint">Apple Silicon &amp; Intel (universal)</div>
+        <a class="btn" id="btn-mac" href="https://github.com/StefanTheSpider/iou.fm/releases/latest">Für Mac laden</a>
+      </div>
+      <div class="dl" id="dl-win">
+        <div class="os">Windows</div>
+        <div class="hint">Windows 10 / 11 (64-bit)</div>
+        <a class="btn" id="btn-win" href="https://github.com/StefanTheSpider/iou.fm/releases/latest">Für Windows laden</a>
+      </div>
+    </div>
+    <p class="ver" id="ver">Version wird geladen …</p>
+  </section>
+
+  <section class="section">
+    <h2>Nach dem Download installieren</h2>
+    <div class="grid2">
+      <div>
+        <strong>macOS</strong>
+        <ol class="steps">
+          <li>Die <strong>.dmg</strong> öffnen, <strong>iou.fm</strong> in „Programme" ziehen.</li>
+          <li>Erster Start: Rechtsklick auf iou.fm → <strong>„Öffnen"</strong> → im Dialog erneut „Öffnen". (Nur einmal nötig.)</li>
+          <li>Falls blockiert: Systemeinstellungen → Datenschutz &amp; Sicherheit → <strong>„Dennoch öffnen"</strong>.</li>
+        </ol>
+      </div>
+      <div>
+        <strong>Windows</strong>
+        <ol class="steps">
+          <li>Die <strong>Setup-.exe</strong> ausführen.</li>
+          <li>Bei „Windows hat Ihren PC geschützt": <strong>„Weitere Informationen" → „Trotzdem ausführen"</strong>.</li>
+          <li>Installieren – fertig.</li>
+        </ol>
+      </div>
+    </div>
+    <p class="ver" style="text-align:left;margin-top:14px">Updates kommen danach automatisch in der App – du musst hier nichts erneut herunterladen.</p>
+  </section>
+
+  <footer>
+    <div class="badges"><span>Ende-zu-Ende verschlüsselt</span><span>·</span><span>SEPA pain.001</span><span>·</span><span>macOS &amp; Windows</span></div>
+    <p>Bereitgestellt mit iou.fm · entwickelt von <a href="https://github.com/StefanTheSpider/iou.fm" target="_blank" rel="noopener">fork and merge UG</a></p>
+  </footer>
+</div>
+
+<script>
+  // Immer die neueste Release-Version + passende Dateien von GitHub holen.
+  const REPO = "StefanTheSpider/iou.fm";
+  const RELEASES = "https://github.com/" + REPO + "/releases/latest";
+  function osGuess(){
+    const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase();
+    if (p.includes("mac")) return "mac";
+    if (p.includes("win")) return "win";
+    return null;
+  }
+  (async () => {
+    const os = osGuess();
+    if (os === "mac") document.getElementById("dl-mac").classList.add("primary");
+    if (os === "win") document.getElementById("dl-win").classList.add("primary");
+    try {
+      const r = await fetch("https://api.github.com/repos/" + REPO + "/releases/latest", { headers: { "Accept": "application/vnd.github+json" } });
+      if (!r.ok) throw new Error("api");
+      const rel = await r.json();
+      const assets = rel.assets || [];
+      const find = (re) => (assets.find(a => re.test(a.name)) || {}).browser_download_url;
+      const mac = find(/universal\.dmg$/i) || find(/\.dmg$/i);
+      const win = find(/x64-setup\.exe$/i) || find(/\.exe$/i) || find(/\.msi$/i);
+      if (mac) document.getElementById("btn-mac").href = mac;
+      if (win) document.getElementById("btn-win").href = win;
+      const d = rel.published_at ? new Date(rel.published_at).toLocaleDateString("de-DE") : "";
+      document.getElementById("ver").textContent = "Aktuelle Version " + (rel.tag_name || "") + (d ? " · " + d : "");
+    } catch (e) {
+      document.getElementById("ver").innerHTML = 'Aktuelle Version auf der <a href="' + RELEASES + '">Releases-Seite</a>.';
+    }
+  })();
+</script>
+</body>
+</html>
