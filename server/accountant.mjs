@@ -61,7 +61,8 @@ export function buildAccountantCsv(feed, ym, appRefunds = []) {
   const sum = entries.reduce((s, r) => s + (r.amountCents || 0), 0);
   rows.push([]);
   rows.push(["Summe", "", "", "", "", "", "", "", eur(sum)]);
-  return [head, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
+  // UTF-8-BOM voranstellen, damit Excel ä/ö/ü korrekt anzeigt (sonst „Ã¤").
+  return "﻿" + [head, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
 }
 
 // Vormonat als "YYYY-MM" relativ zu einem Stichtag (Standard: heute).

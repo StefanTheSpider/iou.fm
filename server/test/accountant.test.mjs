@@ -27,7 +27,8 @@ const may = entriesForMonth(feed, "2026-05");
 ok(may.length === 3, "Mai: 3 Zeilen (1001, 1003, 1005) – nicht 4");
 
 const csv = buildAccountantCsv(feed, "2026-05");
-const head = csv.split("\r\n")[0];
+ok(csv.charCodeAt(0) === 0xFEFF, "CSV: UTF-8-BOM für korrekte Umlaute in Excel");
+const head = csv.replace(/^﻿/, "").split("\r\n")[0];
 ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR)", "CSV: neue Kopfzeile mit Verwendungszweck + Urspr. gezahlt");
 ok(csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;Erstattung 1005 Lady Gaga;200,00;200,00"), "CSV: 1005 eine Zeile, Verwendungszweck gefüllt, 200,00");
 ok(comb.find((r) => r.orderNumber === "1001").purpose === "Stornierung 1001 BTS München", "Verwendungszweck auch bei reinem Storno gefüllt");

@@ -82,7 +82,9 @@ export function toDatev(rows, cfg = {}) {
 }
 
 export function downloadText(content, filename, mime = "text/csv;charset=utf-8") {
-  const blob = new Blob([content], { type: mime });
+  // UTF-8-BOM voranstellen, damit Excel ä/ö/ü korrekt zeigt (sonst „Ã¤").
+  const withBom = content.charCodeAt(0) === 0xFEFF ? content : "﻿" + content;
+  const blob = new Blob([withBom], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename;
