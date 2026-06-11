@@ -116,16 +116,17 @@ function combinedRows(feed) {
   const appR = feed?.appRefunds || [];
   const cancelled = new Set(cancels.map((c) => c.orderNumber));
   const refunded = new Set(refunds.map((r) => r.orderNumber));
+  const vz = (verb, n, ev) => `${verb} ${n || ""}${ev ? " " + ev : ""}`.trim();
   return [
     ...refunds.map((r) => ({ art: cancelled.has(r.orderNumber) ? "Storniert & erstattet" : "Erstattung",
       event: r.event, date: r.date, customer: r.customer, orderNumber: r.orderNumber, category: r.category,
-      amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || "" })),
+      amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || vz("Erstattung", r.orderNumber, r.event) })),
     ...cancels.filter((c) => !refunded.has(c.orderNumber)).map((c) => ({ art: "Stornierung",
       event: c.event, date: c.date, customer: c.customer, orderNumber: c.orderNumber, category: c.category,
-      amountCents: c.amountCents, paidCents: c.amountCents, purpose: "" })),
+      amountCents: c.amountCents, paidCents: c.amountCents, purpose: vz("Stornierung", c.orderNumber, c.event) })),
     ...appR.map((r) => ({ art: "Erstattung (App/SEPA)", event: r.event, date: r.date, customer: r.customer,
       orderNumber: r.orderNumber, category: r.category || "Unzugeordnet", amountCents: r.amountCents,
-      paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || "" })),
+      paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || vz("Erstattung", r.orderNumber, r.event) })),
   ];
 }
 

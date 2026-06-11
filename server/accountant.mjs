@@ -12,6 +12,7 @@ const csvCell = (s) => {
 // Zeile pro Vorgang – ohne Doppelzählung: ist eine Bestellung storniert UND
 // erstattet, erscheint nur die Erstattung (das echte Geldereignis), markiert als
 // „Storniert & erstattet". Reines Storno (ohne Refund) bleibt als „Stornierung".
+const vz = (verb, orderNumber, event) => `${verb} ${orderNumber || ""}${event ? " " + event : ""}`.trim();
 export function combinedEntries(feed, appRefunds = []) {
   const cancels = feed?.cancellations || [];
   const refunds = feed?.refunds || [];
@@ -22,20 +23,23 @@ export function combinedEntries(feed, appRefunds = []) {
     rows.push({
       art: cancelledOrders.has(r.orderNumber) ? "Storniert & erstattet" : "Erstattung",
       event: r.event, date: r.date, customer: r.customer, orderNumber: r.orderNumber,
-      category: r.category, amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents, purpose: r.purpose || "",
+      category: r.category, amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents,
+      purpose: r.purpose || vz("Erstattung", r.orderNumber, r.event),
     });
   }
   for (const c of cancels) {
     if (refundedOrders.has(c.orderNumber)) continue; // schon über die Erstattung abgebildet
     rows.push({
       art: "Stornierung", event: c.event, date: c.date, customer: c.customer, orderNumber: c.orderNumber,
-      category: c.category, amountCents: c.amountCents, paidCents: c.amountCents, purpose: "",
+      category: c.category, amountCents: c.amountCents, paidCents: c.amountCents,
+      purpose: vz("Stornierung", c.orderNumber, c.event),
     });
   }
   for (const a of (appRefunds || [])) {
     rows.push({
       art: "Erstattung (App/SEPA)", event: a.event, date: a.date, customer: a.customer, orderNumber: a.orderNumber,
-      category: a.category || "", amountCents: a.amountCents, paidCents: a.paidCents ?? a.amountCents, purpose: a.purpose || "",
+      category: a.category || "", amountCents: a.amountCents, paidCents: a.paidCents ?? a.amountCents,
+      purpose: a.purpose || vz("Erstattung", a.orderNumber, a.event),
     });
   }
   return rows;

@@ -29,7 +29,8 @@ ok(may.length === 3, "Mai: 3 Zeilen (1001, 1003, 1005) – nicht 4");
 const csv = buildAccountantCsv(feed, "2026-05");
 const head = csv.split("\r\n")[0];
 ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR)", "CSV: neue Kopfzeile mit Verwendungszweck + Urspr. gezahlt");
-ok(csv.includes("Storniert & erstattet;Lady Gaga;10.05.2026;Eva;1005;Konzerte DE;;200,00;200,00") || csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;;200,00;200,00"), "CSV: 1005 eine Zeile, urspr.=erstattet=200,00");
+ok(csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;Erstattung 1005 Lady Gaga;200,00;200,00"), "CSV: 1005 eine Zeile, Verwendungszweck gefüllt, 200,00");
+ok(comb.find((r) => r.orderNumber === "1001").purpose === "Stornierung 1001 BTS München", "Verwendungszweck auch bei reinem Storno gefüllt");
 ok(/Summe;;;;;;;;403,00/.test(csv), "CSV: Summe 129 + 74 + 200 = 403,00 (keine Doppelzählung)");
 
 // App-/SEPA-Erstattung mit Verwendungszweck + urspr. Betrag
