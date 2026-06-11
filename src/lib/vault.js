@@ -10,7 +10,7 @@
 // die Löhne, die nie zum Hub übertragen werden). Geteilt wird nur sharedSubset.
 
 import { HUB_URL } from "../config.js";
-import { bioStore, bioUnlockSecret } from "./biometric.js";
+import { bioStore, bioUnlockSecret, bioDisable } from "./biometric.js";
 export { bioAvailable, bioEnabledUser, bioDisable } from "./biometric.js";
 
 const SESSION_KEY = "iou_session_v3";
@@ -294,7 +294,19 @@ export async function enableBiometric(session) {
 }
 // Entsperrt per Touch ID/Hello und baut die Sitzung ohne Passwort wieder auf.
 export async function unlockWithBiometrics() {
-  const blob = await bioUnlockSecret();
+  let blob;
+  try {
+    blob = await bioUnlockSecret();
+  } catch (err) {
+    const raw = typeof err === "string" ? err : (err?.message || "");
+    // Marker vorhanden, aber Schlüsseldatei fehlt (z. B. nach Umstieg vom Schlüsselbund
+    // oder gelöschtem App-Datenordner): veralteten Marker entfernen und sauber melden.
+    if (/no such file|os error 2|not.?found|entry not found/i.test(raw)) {
+      try { await bioDisable(); } catch { /* egal */ }
+      throw new Error("Touch ID muss einmal neu eingerichtet werden – bitte mit Passwort anmelden und Touch ID aktivieren.");
+    }
+    throw err;
+  }
   const s = JSON.parse(blob);
   const dek = await importDek(unb64(s.dek));
   return buildSession({ tenantId: s.tenantId, accessKey: s.accessKey, role: s.role, owner: s.owner, username: s.username, authHash: s.authHash, dek });

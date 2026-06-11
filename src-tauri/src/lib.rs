@@ -2,17 +2,21 @@
 // Updater-Plugin (Auto-Update), sowie biometrisches Entsperren (Touch ID / Windows Hello).
 
 // ===== Biometrisches Entsperren ============================================
-// Nach dem ersten Passwort-Login wird ein Entsperr-Schlüssel im sicheren OS-Speicher
-// abgelegt (Keychain / Credential Manager). Beim nächsten Start gibt ein Biometrie-
-// Prompt (Touch ID / Windows Hello) den Schlüssel frei – kein Tippen nötig.
+// Nach dem ersten Passwort-Login wird ein Entsperr-Schlüssel lokal abgelegt
+// (geschützte Datei im App-Datenordner, nur fürs eigene Benutzerkonto lesbar).
+// Beim nächsten Start gibt ein nativer Biometrie-Prompt (Touch ID / Windows Hello)
+// den Schlüssel frei – kein Tippen, KEIN Schlüsselbund-Passwort nötig.
+//
+// Bewusste Entscheidung: NICHT den macOS-Schlüsselbund (keyring) nutzen. Dieser
+// fragt bei jeder neuen (Dev-)Signatur erneut das Schlüsselbund-Passwort ab. Der
+// Schutz besteht hier aus (a) dem Betriebssystem-Benutzerkonto + Dateirechten 0600
+// und (b) dem Touch-ID/Windows-Hello-Prompt vor dem Lesen. Das Master-Passwort
+// bleibt der eigentliche Schlüssel (E2E unverändert); Biometrie ist reine
+// Geräte-lokale Bequemlichkeit.
 #[cfg(desktop)]
 mod biometric {
-    use keyring::Entry;
-    const SERVICE: &str = "fm.iou.app.unlock";
-
-    fn entry(account: &str) -> Result<Entry, String> {
-        Entry::new(SERVICE, account).map_err(|e| e.to_string())
-    }
+    use std::fs;
+    use std::path::PathBuf;
 
     pub fn available() -> bool { true }
 
@@ -34,44 +38,73 @@ mod biometric {
             .map_err(|e| format!("{e:?}"))
     }
 
-    pub fn store(account: &str, secret: &str) -> Result<(), String> {
-        entry(account)?.set_password(secret).map_err(|e| e.to_string())
+    fn sanitize(account: &str) -> String {
+        account.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
     }
-    pub fn fetch(account: &str) -> Result<String, String> {
-        entry(account)?.get_password().map_err(|e| e.to_string())
+
+    fn key_path(base: PathBuf, account: &str) -> PathBuf {
+        base.join("bio").join(format!("{}.key", sanitize(account)))
     }
-    pub fn clear(account: &str) -> Result<(), String> {
-        let _ = entry(account)?.delete_credential();
+
+    pub fn store(base: PathBuf, account: &str, secret: &str) -> Result<(), String> {
+        let p = key_path(base, account);
+        if let Some(dir) = p.parent() { fs::create_dir_all(dir).map_err(|e| e.to_string())?; }
+        fs::write(&p, secret.as_bytes()).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
+        }
         Ok(())
     }
-    pub fn has(account: &str) -> bool {
-        entry(account).and_then(|e| e.get_password().map_err(|x| x.to_string())).is_ok()
+    pub fn fetch(base: PathBuf, account: &str) -> Result<String, String> {
+        let bytes = fs::read(key_path(base, account)).map_err(|e| e.to_string())?;
+        String::from_utf8(bytes).map_err(|e| e.to_string())
+    }
+    pub fn clear(base: PathBuf, account: &str) -> Result<(), String> {
+        let _ = fs::remove_file(key_path(base, account));
+        Ok(())
+    }
+    pub fn has(base: PathBuf, account: &str) -> bool {
+        key_path(base, account).exists()
     }
 }
 
 #[cfg(not(desktop))]
 mod biometric {
+    use std::path::PathBuf;
     pub fn available() -> bool { false }
     pub fn prompt(_r: &str) -> Result<(), String> { Err("nicht verfügbar".into()) }
-    pub fn store(_a: &str, _s: &str) -> Result<(), String> { Err("nicht verfügbar".into()) }
-    pub fn fetch(_a: &str) -> Result<String, String> { Err("nicht verfügbar".into()) }
-    pub fn clear(_a: &str) -> Result<(), String> { Ok(()) }
-    pub fn has(_a: &str) -> bool { false }
+    pub fn store(_b: PathBuf, _a: &str, _s: &str) -> Result<(), String> { Err("nicht verfügbar".into()) }
+    pub fn fetch(_b: PathBuf, _a: &str) -> Result<String, String> { Err("nicht verfügbar".into()) }
+    pub fn clear(_b: PathBuf, _a: &str) -> Result<(), String> { Ok(()) }
+    pub fn has(_b: PathBuf, _a: &str) -> bool { false }
+}
+
+fn bio_base(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    app.path().app_local_data_dir().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn bio_available() -> bool { biometric::available() }
 #[tauri::command]
-fn bio_has(account: String) -> bool { biometric::has(&account) }
-#[tauri::command]
-fn bio_enable(account: String, secret: String) -> Result<(), String> { biometric::store(&account, &secret) }
-#[tauri::command]
-fn bio_unlock(account: String) -> Result<String, String> {
-    biometric::prompt("iou.fm entsperren")?;
-    biometric::fetch(&account)
+fn bio_has(app: tauri::AppHandle, account: String) -> bool {
+    bio_base(&app).map(|b| biometric::has(b, &account)).unwrap_or(false)
 }
 #[tauri::command]
-fn bio_disable(account: String) -> Result<(), String> { biometric::clear(&account) }
+fn bio_enable(app: tauri::AppHandle, account: String, secret: String) -> Result<(), String> {
+    biometric::store(bio_base(&app)?, &account, &secret)
+}
+#[tauri::command]
+fn bio_unlock(app: tauri::AppHandle, account: String) -> Result<String, String> {
+    biometric::prompt("iou.fm entsperren")?;
+    biometric::fetch(bio_base(&app)?, &account)
+}
+#[tauri::command]
+fn bio_disable(app: tauri::AppHandle, account: String) -> Result<(), String> {
+    biometric::clear(bio_base(&app)?, &account)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

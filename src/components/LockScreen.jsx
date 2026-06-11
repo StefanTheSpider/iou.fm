@@ -29,7 +29,12 @@ export default function LockScreen({ onUnlock, branding = BRANDING }) {
   async function bioLogin() {
     setError(""); setBusy(true);
     try { onUnlock(await unlockWithBiometrics()); }
-    catch (err) { setError(err?.message ? `Biometrie: ${err.message}` : "Biometrisches Entsperren abgebrochen."); }
+    catch (err) {
+      // Tauri-Command-Fehler kommen als String an (ohne .message) – beide Fälle abdecken.
+      const raw = typeof err === "string" ? err : (err?.message || "");
+      const cancelled = /cancel|abbruch|abgebrochen|usercancel|authentication.?fail/i.test(raw);
+      setError(cancelled || !raw ? "Touch ID abgebrochen – tippe den Button und lege den Finger auf." : `Biometrie: ${raw}`);
+    }
     finally { setBusy(false); }
   }
 
