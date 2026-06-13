@@ -5,7 +5,7 @@ import { generateEbicsKeys, openIniLetter, ebicsStatusLabel, EBICS_STATUS, ebics
 // Opt-in: Tix & Travel (oder jeder Käufer) entscheidet hier aktiv, ob die direkte
 // Bankanbindung genutzt wird, und meldet sich mit seinen EBICS-Zugangsdaten an.
 // Private Schlüssel landen in data.ebicsKeys (lokal, nie zum Hub).
-export default function EbicsSettings({ data, updateData }) {
+export default function EbicsSettings({ data, updateData, allowed = true }) {
   const cfg = data.config?.ebics || {};
   const keys = data.ebicsKeys || null;
   const [busy, setBusy] = useState("");
@@ -67,8 +67,13 @@ export default function EbicsSettings({ data, updateData }) {
         Die EBICS-Schlüssel werden lokal erzeugt und bleiben Ende-zu-Ende verschlüsselt auf diesem Gerät; der Server sieht sie nie.
       </p>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
-        <input type="checkbox" checked={enabled} onChange={(e) => toggleEnabled(e.target.checked)} />
+      {!allowed && (
+        <p className="note" style={{ background: "rgba(201,162,75,.12)", border: "1px solid rgba(201,162,75,.4)", borderRadius: 8, padding: "10px 12px", color: "#e7c982" }}>
+          🔒 Die EBICS-Bankanbindung ist im Tarif <strong>Bank</strong> enthalten. Unter „Abo &amp; Lizenz" upgraden, um sie zu nutzen.
+        </p>
+      )}
+      <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, opacity: allowed ? 1 : 0.5 }}>
+        <input type="checkbox" checked={enabled} disabled={!allowed && !enabled} onChange={(e) => toggleEnabled(e.target.checked)} />
         <span><strong>Bankanbindung aktivieren</strong> – ich möchte Überweisungen direkt aus der App senden.</span>
       </label>
 

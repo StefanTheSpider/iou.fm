@@ -3,7 +3,7 @@ import { inspectIban, formatIban, validateIban, cleanIban } from "../lib/iban.js
 import { parseAmount, formatEur } from "../lib/money.js";
 import { computeRefund, REFUND_MODES } from "../lib/refund.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
-import { fetchShopifyOrder } from "../lib/shopify.js";
+import { fetchOrder, ecommerceConfig, ecommerceConfigured, platformLabel } from "../lib/ecommerce/index.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -40,7 +40,7 @@ function emptyRow(defaults = {}) {
   };
 }
 
-export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null, onAppRefunds = null, userName = "" }) {
+export default function Erstattungen({ data, updateData, profile = "erstattung", canPay = true, feed = null, onAppRefunds = null, userName = "", ebicsAllowed = false }) {
   const isErstattung = profile !== "sammel";
   const cancelledSet = new Set((feed?.cancellations || []).map((c) => c.orderNumber));
   const cancelInfo = (num) => (feed?.cancellations || []).find((c) => c.orderNumber === String(num).replace(/^#/, ""));
@@ -55,8 +55,9 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     return null;
   };
   const accounts = data.accounts || [];
-  const shopify = data.shopify || {};
-  const shopifyConnected = !!(shopify.domain && shopify.token);
+  const { platform, config: ecoConfig } = ecommerceConfig(data);
+  const shopConnected = ecommerceConfigured(data);
+  const shopName = platformLabel(platform);
 
   const rows = data.refunds || [];
   const [defMode, setDefMode] = useState("fee");
@@ -105,7 +106,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     setError(""); const num = orderInput.trim(); if (!num) return;
     setBusy(true);
     try {
-      const o = await fetchShopifyOrder({ domain: shopify.domain, token: shopify.token, orderNumber: num });
+      const o = await fetchOrder({ platform, config: ecoConfig, orderNumber: num });
       const cancelled = cancelInfo(num);
       const refunded = refundedInfo(num);
       const inList = rows.some((x) => norm(x.orderNumber) === norm(o.orderNumber)); // schon in der Liste?
@@ -205,15 +206,15 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
 
       <div className="card">
         <div className="toolbar" style={{ marginTop: 0 }}>
-          {isErstattung && (shopifyConnected ? (
+          {isErstattung && (shopConnected ? (
             <>
               <input type="text" value={orderInput} onChange={(e) => setOrderInput(e.target.value)}
                 placeholder="Bestellnummer z. B. 1024" style={{ maxWidth: 200 }}
                 onKeyDown={(e) => e.key === "Enter" && importOrder()} />
-              <button className="btn" onClick={importOrder} disabled={busy}>{busy ? "Lädt…" : "Aus Shopify laden"}</button>
+              <button className="btn" onClick={importOrder} disabled={busy}>{busy ? "Lädt…" : `Aus ${shopName} laden`}</button>
             </>
           ) : (
-            <span className="note" style={{ margin: 0 }}>Shopify nicht verbunden – unter <strong>Stammdaten</strong> Domain + Token eintragen, um Bestellungen zu laden.</span>
+            <span className="note" style={{ margin: 0 }}>{shopName} nicht verbunden – unter <strong>Stammdaten</strong> die Shop-Anbindung einrichten, um Bestellungen zu laden.</span>
           ))}
           <button className="btn ghost" onClick={addEmpty}>{isErstattung ? "+ Leere Zeile" : "+ Empfänger"}</button>
           <div className="spacer" />
@@ -234,7 +235,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         )}
         {canPay && lastSepa && (
           <div style={{ marginTop: 10 }}>
-            <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: isErstattung ? "erstattung" : "sammel", filename: lastSepa.filename }} />
+            <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: isErstattung ? "erstattung" : "sammel", filename: lastSepa.filename }} allowed={ebicsAllowed} />
           </div>
         )}
       </div>

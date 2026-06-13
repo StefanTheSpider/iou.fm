@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import LockScreen from "./components/LockScreen.jsx";
+import Paywall from "./components/Paywall.jsx";
 import Stammdaten from "./components/Stammdaten.jsx";
 import Lohn from "./components/Lohn.jsx";
 import Erstattungen from "./components/Erstattungen.jsx";
@@ -11,7 +12,18 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds } from "./lib/feed.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds } from "./lib/feed.js";
+import { invoke } from "@tauri-apps/api/core";
+import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics } from "./lib/billing.js";
+
+// URL im System-Browser öffnen (Tauri), sonst neuer Tab.
+async function openExternal(url) {
+  try { await invoke("open_external", { url }); }
+  catch { window.open(url, "_blank", "noopener"); }
+}
+// Bedienungsanleitung (auf der Landingpage gepflegt).
+const HELP_URL = "https://stefanthespider.github.io/iou.fm/anleitung.html";
+const openHelp = () => openExternal(HELP_URL);
 import { Anfragen, Stornos } from "./components/ShopifyTabs.jsx";
 import OwnerPanel from "./components/OwnerPanel.jsx";
 import { SupportApprovalModal, VendorSupport } from "./components/Support.jsx";
@@ -35,6 +47,10 @@ export default function App() {
   const [supportStatus, setSupportStatus] = useState(null); // Kunde: offene Support-Anfragen
   const [showApproval, setShowApproval] = useState(false);
   const [bioOffer, setBioOffer] = useState(false); // „Touch ID aktivieren?"-Banner
+  const [license, setLicense] = useState(null);    // Abo-/Lizenzstatus vom Hub
+  const [billingBusy, setBillingBusy] = useState("");
+  const [billingErr, setBillingErr] = useState("");
+  const [showPaywall, setShowPaywall] = useState(false);
 
   // Biometrie anbieten, wenn verfügbar und noch nicht eingerichtet (echte Sitzung).
   useEffect(() => {
@@ -47,6 +63,38 @@ export default function App() {
   const savedTimer = useRef(null);
 
   useEffect(() => { sessionRef.current = session; }, [session]);
+
+  // Lizenz-/Abo-Status laden (nicht im Vendor-Support-Modus).
+  const refreshLicense = useCallback(async () => {
+    const s = sessionRef.current;
+    if (!s?.tenantId || s.currentUser?.support) { setLicense(null); return; }
+    try { setLicense(await getLicense(s)); } catch { /* still */ }
+  }, []);
+  useEffect(() => { refreshLicense(); }, [session?.tenantId, refreshLicense]);
+
+  // Abo abschließen: Stripe-Bezahlseite öffnen und auf Freischaltung warten.
+  async function subscribe(plan) {
+    setBillingErr(""); setBillingBusy("checkout");
+    try {
+      const { url } = await startCheckout(sessionRef.current, plan);
+      await openExternal(url);
+      const started = Date.now();
+      const poll = setInterval(async () => {
+        try {
+          const lic = await getLicense(sessionRef.current);
+          if (lic) setLicense(lic);
+          if (lic?.active && lic.status === "active") { clearInterval(poll); setBillingBusy(""); setShowPaywall(false); }
+        } catch { /* weiter */ }
+        if (Date.now() - started > 5 * 60 * 1000) { clearInterval(poll); setBillingBusy(""); }
+      }, 4000);
+    } catch (e) { setBillingErr(e.message || "Fehler."); setBillingBusy(""); }
+  }
+  async function manageBilling() {
+    setBillingErr(""); setBillingBusy("portal");
+    try { const { url } = await openPortal(sessionRef.current); await openExternal(url); setTimeout(refreshLicense, 8000); }
+    catch (e) { setBillingErr(e.message || "Fehler."); }
+    finally { setBillingBusy(""); }
+  }
 
   // Löhne sind streng Admin-only: Mitarbeiter niemals auf dem Lohn-Tab landen lassen.
   useEffect(() => {
@@ -246,6 +294,7 @@ export default function App() {
   const shopify = useMemo(() => ({
     getIntegration: () => getIntegration(sessionRef.current),
     save: (cfg) => saveIntegration(sessionRef.current, cfg),
+    connect: (shop) => shopifyOAuthStart(sessionRef.current, shop),
     syncNow: async () => { const r = await triggerSync(sessionRef.current); await refreshFeed(); return r; },
   }), [refreshFeed]);
 
@@ -254,6 +303,17 @@ export default function App() {
     save: (cfg) => saveAccountant(sessionRef.current, cfg),
     sendNow: (month) => sendAccountantNow(sessionRef.current, month),
   }), []);
+
+  // Abo/Lizenz-Aktionen für die Stammdaten-Oberfläche.
+  const billing = useMemo(() => ({
+    get: () => getLicense(sessionRef.current),
+    checkout: (plan) => startCheckout(sessionRef.current, plan),
+    portal: () => openPortal(sessionRef.current),
+    seats: (packs) => setSeatPacks(sessionRef.current, packs),
+    claimOwner: (ownerId) => claimOwner(sessionRef.current, ownerId),
+    open: openExternal,
+    refresh: refreshLicense,
+  }), [refreshLicense]);
 
   const UpdateBanner = () => update ? (
     <div className="update-banner">
@@ -275,9 +335,10 @@ export default function App() {
     return <><UpdateBanner /><LockScreen onUnlock={onUnlock} branding={branding} /></>;
   }
 
-  // Owner-Modus: live zwischen Modi umschalten (reine Vorschau, ändert nichts Echtes).
-  const isOwner = session.currentUser.owner === true;
+  // Vendor-Owner: NUR das per OWNER_ID freigeschaltete Anbieter-Konto (nicht jeder Mandanten-
+  // Gründer!). Nur dieses Konto hat Vendor-Rechte: Support-Login in andere Konten + Modus-Vorschau.
   const inSupport = session.currentUser.support === true; // Vendor in fremdem Kundenkonto
+  const isOwner = !!license?.isOwnerTenant && !inSupport;
   const ov = isOwner ? ownerView : { asUser: false, payout: null, rechnung: null, demo: false };
   const demoMode = !!ov.demo;
   const data = demoMode ? DEMO_DATA : session.data;
@@ -288,6 +349,28 @@ export default function App() {
   const isAdmin = (session.currentUser.role === "admin") && !ov.asUser;
   const rechnungOn = ov.rechnung != null ? ov.rechnung : !!data.config?.modules?.rechnung;
   const rechnungZahlungOn = !!data.config?.modules?.rechnungZahlung;
+  const ebicsAllowed = licenseAllowsEbics(license); // EBICS nur Bank-Tarif (zahlend) oder Sonderstatus
+
+  // Lizenz-Sperre: nur wenn Durchsetzung aktiv und kein gültiges Abo/Trial (nie im Support-/Demo-Modus).
+  const billingBlocked = license && license.enforce && !license.active && !inSupport && !demoMode;
+  if (billingBlocked || (showPaywall && !inSupport)) {
+    return (
+      <>
+        <UpdateBanner />
+        <Paywall
+          license={license}
+          onSubscribe={subscribe}
+          onManage={manageBilling}
+          onLogout={lock}
+          onClose={billingBlocked ? undefined : () => setShowPaywall(false)}
+          busy={billingBusy}
+          error={billingErr}
+          branding={branding}
+        />
+      </>
+    );
+  }
+
   const Brand = () => branding.logoUrl
     ? <img className="logo-img" src={branding.logoUrl} alt={branding.productName} />
     : <>{branding.brandText}<span>{branding.brandAccent}</span></>;
@@ -313,9 +396,23 @@ export default function App() {
         <div className="spacer" />
         {saved && <span className="save-indicator show">✓ Gespeichert</span>}
         {dirty && <button className="btn small" onClick={commit}>Änderungen speichern</button>}
+        <button className="lock-btn" onClick={openHelp} title="Bedienungsanleitung öffnen" aria-label="Bedienungsanleitung">📖 Anleitung</button>
         <span className="user-chip">{session.currentUser.username}{session.currentUser.role === "admin" ? " · Admin" : ""}</span>
         <button className="lock-btn" onClick={lock}>🔒 Abmelden</button>
       </header>
+
+      {license?.status === "trialing" && license?.active && !inSupport && (
+        <div className="owner-banner" style={{ background: "linear-gradient(90deg, rgba(201,162,75,.18), rgba(201,162,75,.06))", borderColor: "rgba(201,162,75,.5)", color: "#e7c982" }}>
+          Testphase – noch <strong>{license.trialDaysLeft} Tag{license.trialDaysLeft === 1 ? "" : "e"}</strong>.
+          <button className="btn small" style={{ marginLeft: 12 }} onClick={() => setShowPaywall(true)}>Jetzt abonnieren</button>
+        </div>
+      )}
+      {license && license.status === "past_due" && !inSupport && (
+        <div className="owner-banner" style={{ background: "rgba(255,107,107,.12)", borderColor: "rgba(255,107,107,.5)", color: "#ffb3b3" }}>
+          Zahlung offen – bitte das Zahlungsmittel prüfen.
+          <button className="btn small" style={{ marginLeft: 12 }} onClick={manageBilling} disabled={!!billingBusy}>Abo verwalten</button>
+        </div>
+      )}
 
       {bioOffer && !inSupport && (
         <div className="owner-banner" style={{ background: "linear-gradient(90deg, rgba(61,220,151,.16), rgba(61,220,151,.06))", borderColor: "rgba(61,220,151,.5)", color: "#7ef0bd" }}>
@@ -355,8 +452,8 @@ export default function App() {
           )
         ) : (
           <>
-            {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} />}
-            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} userName={session.currentUser.username} />}
+            {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} ebicsAllowed={ebicsAllowed} />}
+            {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} userName={session.currentUser.username} ebicsAllowed={ebicsAllowed} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={effUpdateData} />}
             {tab === "rechnungen" && rechnungZahlungOn && <Rechnungen data={data} updateData={effUpdateData} canPay={isAdmin} userName={session.currentUser.username} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
@@ -364,6 +461,7 @@ export default function App() {
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}
             {tab === "stammdaten" && isAdmin && (
               <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify} accountant={accountant}
+                billing={billing} license={license} ebicsAllowed={ebicsAllowed} tenantId={session.tenantId}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
             {tab === "support" && isOwner && <VendorSupport onOpenSession={enterSupport} />}

@@ -26,6 +26,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
 import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend } from "./accountant.mjs";
+import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
+import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
+import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook } from "./stripe.mjs";
+
+const PUBLIC_URL = (process.env.PUBLIC_URL || "https://ioufm-production.up.railway.app").replace(/\/+$/, "");
 
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || "./data";
@@ -246,6 +251,28 @@ function bearer(req) {
 }
 const body = (req) => readBody(req).catch((e) => ({ __err: e.message }));
 
+// Roh-Body (für Stripe-Webhook-Signaturprüfung – darf nicht vorab JSON-geparst werden).
+function rawBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on("data", (c) => { size += c.length; if (size > MAX_BODY) { reject(new Error("too_large")); req.destroy(); return; } chunks.push(c); });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+// Anzahl der Benutzer eines Mandanten (für die Sitzplatz-Anzeige).
+async function countTenantUsers(tenantId) {
+  let used = 0;
+  try {
+    for (const f of (await fs.readdir(USER_DIR)).filter((x) => x.endsWith(".json"))) {
+      const u = await readJson(path.join(USER_DIR, f));
+      if (u && u.tenantId === tenantId) used++;
+    }
+  } catch {}
+  return used;
+}
+
 // --- Routing -----------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   try {
@@ -272,6 +299,9 @@ const server = http.createServer(async (req, res) => {
         tenantId, accessKey, company: String(b.company || "").slice(0, 200),
         founderUsername: b.username, // Gründer = Owner dieses Mandanten
         rev: 0, payload: null, createdAt: new Date().toISOString(), updatedAt: null,
+        // 7 Tage kostenloser Test ab Registrierung.
+        trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString(),
+        license: { plan: null, status: "trialing", seats: 5 },
       });
       await writeUser({
         username: b.username, salt: b.salt, authVerifier: sha256(b.authHash),
@@ -319,6 +349,18 @@ const server = http.createServer(async (req, res) => {
       if (!validUser(nu.username)) return send(res, 400, { error: "bad_username" });
       if (!nu.salt || !nu.authHash || !nu.wrappedDek) return send(res, 400, { error: "missing_fields" });
       if (await readUser(nu.username)) return send(res, 409, { error: "username_taken" });
+      // Sitzplatz-Grenze: jede Lizenz enthält 5 Mitarbeiter, weitere als 5er-Pakete.
+      if (billingEnforced() && !t.billingExempt) {
+        const seats = licenseView(t).seatsAllowed;
+        let used = 0;
+        try {
+          for (const f of (await fs.readdir(USER_DIR)).filter((x) => x.endsWith(".json"))) {
+            const u = await readJson(path.join(USER_DIR, f));
+            if (u && u.tenantId === admin.tenantId) used++;
+          }
+        } catch {}
+        if (used >= seats) return send(res, 402, { error: "seat_limit", seats, used });
+      }
       await writeUser({
         username: nu.username, salt: nu.salt, authVerifier: sha256(nu.authHash),
         wrappedDek: nu.wrappedDek, role: nu.role === "admin" ? "admin" : "user",
@@ -412,6 +454,167 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
       return send(res, 405, { error: "method_not_allowed" });
+    }
+
+    // ===== SHOPIFY OAUTH ("Mit Shopify verbinden") ===========================
+    // POST /api/tenants/:id/shopify/oauth-start { shop } -> { url } (authentifiziert)
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "shopify" && parts[4] === "oauth-start" && req.method === "POST") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!oauthConfigured()) return send(res, 503, { error: "oauth_not_configured" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const shop = normalizeShop(b.shop);
+      if (!shop) return send(res, 400, { error: "bad_shop" });
+      return send(res, 200, { url: buildAuthUrl({ shop, tenantId: id }) });
+    }
+
+    // GET /api/shopify/oauth/callback – Shopify-Redirect (öffentlich, liefert HTML)
+    if (parts[0] === "api" && parts[1] === "shopify" && parts[2] === "oauth" && parts[3] === "callback" && req.method === "GET") {
+      const q = Object.fromEntries(url.searchParams.entries());
+      const page = (title, msg, ok = true) =>
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${title}</title>
+        <style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0f1115;color:#e7e9ee;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+        .card{background:#171a21;border:1px solid #262b36;border-radius:14px;padding:32px 36px;max-width:420px;text-align:center}
+        h1{font-size:18px;margin:0 0 8px}p{color:#9aa3b2;margin:0 0 6px;font-size:14px}.ok{color:#3ddc97}.bad{color:#ff6b6b}</style></head>
+        <body><div class="card"><h1 class="${ok ? "ok" : "bad"}">${title}</h1><p>${msg}</p>
+        <p style="margin-top:14px">Du kannst dieses Fenster schließen und zur iou.fm-App zurückkehren.</p></div></body></html>`;
+      const html = (code, body) => { res.writeHead(code, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" }); res.end(body); };
+      try {
+        const st = verifyState(q.state);
+        if (!st) return html(400, page("Verbindung fehlgeschlagen", "Ungültiger oder abgelaufener Vorgang. Bitte erneut starten.", false));
+        const shop = normalizeShop(q.shop);
+        if (!shop || shop !== st.shop) return html(400, page("Verbindung fehlgeschlagen", "Shop stimmt nicht überein.", false));
+        if (!verifyShopifyHmac(q)) return html(400, page("Verbindung fehlgeschlagen", "Signaturprüfung fehlgeschlagen.", false));
+        const t = await readTenant(st.t);
+        if (!t) return html(404, page("Verbindung fehlgeschlagen", "Mandant nicht gefunden.", false));
+        const token = await exchangeToken({ shop, code: q.code });
+        t.integration = t.integration || {};
+        t.integration.shopify = { domain: shop, token: encToken(token), connectedAt: new Date().toISOString() };
+        await writeTenant(t);
+        return html(200, page("Shopify verbunden ✓", `Dein Shop „${shop}" ist jetzt mit iou.fm verbunden.`, true));
+      } catch (e) {
+        return html(502, page("Verbindung fehlgeschlagen", "Token konnte nicht abgerufen werden. Bitte erneut versuchen.", false));
+      }
+    }
+
+    // POST /api/tenants/:id/claim-owner { ownerId } – Owner-Status per Secret freischalten.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "claim-owner" && req.method === "POST") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const ownerId = process.env.OWNER_ID || "";
+      if (!ownerId) return send(res, 503, { error: "owner_id_not_set" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      if (!eq(String(b.ownerId || ""), ownerId)) return send(res, 403, { error: "bad_owner_id" });
+      t.billingExempt = true;
+      t.isOwnerTenant = true;
+      await writeTenant(t);
+      return send(res, 200, { ok: true });
+    }
+
+    // ===== BILLING / LIZENZ (Stripe SEPA-Abo) ================================
+    // GET /api/tenants/:id/license – Lizenz-/Trial-Status + Sitzplätze.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "license" && req.method === "GET") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const view = licenseView(t);
+      view.seatsUsed = await countTenantUsers(id);
+      view.billingAvailable = stripeConfigured();
+      return send(res, 200, view);
+    }
+
+    // POST /api/tenants/:id/billing/checkout { plan } – Stripe-Checkout-URL (Abo).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "billing" && parts[4] === "checkout" && req.method === "POST") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!stripeConfigured()) return send(res, 503, { error: "billing_not_configured" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const plan = String(b.plan || "");
+      if (!planExists(plan)) return send(res, 400, { error: "bad_plan" });
+      const priceId = priceIdForPlan(plan);
+      if (!priceId) return send(res, 503, { error: "price_missing", detail: `ENV ${PLANS[plan].priceEnv} fehlt` });
+      try {
+        const s = await createCheckoutSession({
+          tenantId: id, plan, priceId, email: b.email || undefined,
+          successUrl: `${PUBLIC_URL}/api/stripe/return?status=success`,
+          cancelUrl: `${PUBLIC_URL}/api/stripe/return?status=cancel`,
+        });
+        return send(res, 200, { url: s.url });
+      } catch (e) { return send(res, 502, { error: "stripe_failed", detail: e.message }); }
+    }
+
+    // POST /api/tenants/:id/billing/portal – Kundenportal (verwalten/kündigen).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "billing" && parts[4] === "portal" && req.method === "POST") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!stripeConfigured()) return send(res, 503, { error: "billing_not_configured" });
+      if (!t.stripeCustomerId) return send(res, 409, { error: "no_subscription" });
+      try {
+        const s = await createPortalSession({ customerId: t.stripeCustomerId, returnUrl: `${PUBLIC_URL}/api/stripe/return?status=portal` });
+        return send(res, 200, { url: s.url });
+      } catch (e) { return send(res, 502, { error: "stripe_failed", detail: e.message }); }
+    }
+
+    // POST /api/tenants/:id/billing/seats { packs } – Sitzplatz-Pakete (je 5) setzen.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "billing" && parts[4] === "seats" && req.method === "POST") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!stripeConfigured() || !seatPriceId()) return send(res, 503, { error: "seats_not_configured" });
+      if (!t.stripeSubscriptionId) return send(res, 409, { error: "no_subscription" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const packs = Math.max(0, Math.min(20, parseInt(b.packs, 10) || 0));
+      try {
+        await setSeatPacks({ subId: t.stripeSubscriptionId, seatPriceId: seatPriceId(), packs });
+        return send(res, 200, { ok: true, packs }); // Sitzplätze werden per Webhook aktualisiert
+      } catch (e) { return send(res, 502, { error: "stripe_failed", detail: e.message }); }
+    }
+
+    // POST /api/stripe/webhook – Stripe-Events (roh + signiert), aktualisiert die Lizenz.
+    if (parts[0] === "api" && parts[1] === "stripe" && parts[2] === "webhook" && req.method === "POST") {
+      const raw = await rawBody(req);
+      const event = verifyWebhook(raw, req.headers["stripe-signature"]);
+      if (!event) return send(res, 400, { error: "bad_signature" });
+      const tenantId = event.data?.object?.metadata?.tenantId
+        || event.data?.object?.client_reference_id
+        || event.data?.object?.subscription_details?.metadata?.tenantId;
+      if (tenantId && validId(tenantId)) {
+        const t = await readTenant(tenantId);
+        if (t && applyStripeEvent(t, event)) await writeTenant(t);
+      }
+      return send(res, 200, { received: true });
+    }
+
+    // GET /api/stripe/return – Rückkehrseite nach Checkout/Portal (HTML).
+    if (parts[0] === "api" && parts[1] === "stripe" && parts[2] === "return" && req.method === "GET") {
+      const status = url.searchParams.get("status") || "success";
+      const ok = status !== "cancel";
+      const title = status === "cancel" ? "Vorgang abgebrochen" : status === "portal" ? "Abo aktualisiert" : "Abo aktiv ✓";
+      const msg = status === "cancel"
+        ? "Es wurde kein Abo abgeschlossen."
+        : "Vielen Dank! Du kannst dieses Fenster schließen und zur iou.fm-App zurückkehren.";
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${title}</title>
+        <style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0f1115;color:#e7e9ee;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+        .card{background:#171a21;border:1px solid #262b36;border-radius:14px;padding:32px 36px;max-width:420px;text-align:center}
+        h1{font-size:18px;margin:0 0 8px}p{color:#9aa3b2;margin:0;font-size:14px}.ok{color:#C9A24B}.bad{color:#ff6b6b}</style></head>
+        <body><div class="card"><h1 class="${ok ? "ok" : "bad"}">${title}</h1><p>${msg}</p></div></body></html>`);
     }
 
     // GET /api/tenants/:id/feed  – vom Cron gesammelte Shopify-Daten

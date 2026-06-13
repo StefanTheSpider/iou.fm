@@ -23,7 +23,7 @@ const dec = new TextDecoder();
 // config.ebics – das sind keine Geheimnisse und dürfen mit dem Hub syncen. Die PRIVATEN
 // EBICS-Schlüssel liegen ausschließlich in `ebicsKeys` (lokal) und sind bewusst NICHT in
 // SHARED_KEYS – sie verlassen das Gerät nie (wie die Löhne). E2E bleibt unangetastet.
-export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], shopify: {}, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
+export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], shopify: {}, ecommerce: { platform: "shopify" }, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
 
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));

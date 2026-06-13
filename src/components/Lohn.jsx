@@ -5,7 +5,7 @@ import { parseAmount, formatEur } from "../lib/money.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
 
-export default function Lohn({ data, updateData, canPay = true }) {
+export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = false }) {
   const [parsed, setParsed] = useState(null);
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
@@ -247,7 +247,7 @@ export default function Lohn({ data, updateData, canPay = true }) {
           <span className="note">Nur Admins erstellen die SEPA-Lohndatei.</span>
         )}
         {canPay && lastSepa && (
-          <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: "lohn", filename: lastSepa.filename }} style={{ marginLeft: 8 }} />
+          <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: "lohn", filename: lastSepa.filename }} allowed={ebicsAllowed} style={{ marginLeft: 8 }} />
         )}
       </div>
 

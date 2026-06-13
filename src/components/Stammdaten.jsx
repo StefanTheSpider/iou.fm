@@ -1,8 +1,16 @@
 import { useState, useEffect } from "react";
 import { inspectIban, formatIban } from "../lib/iban.js";
 import { normalizeColor } from "../lib/theme.js";
+import { invoke } from "@tauri-apps/api/core";
 import CloudSync from "./CloudSync.jsx";
 import EbicsSettings from "./EbicsSettings.jsx";
+import BillingSettings from "./BillingSettings.jsx";
+
+// URL im System-Browser öffnen (Tauri), im Browser-Dev als neuer Tab.
+async function openExternal(url) {
+  try { await invoke("open_external", { url }); }
+  catch { window.open(url, "_blank", "noopener"); }
+}
 
 function IbanStatus({ info }) {
   if (!info) return null;
@@ -25,12 +33,13 @@ function useIbanField() {
   return { value, setValue, info, setInfo, check };
 }
 
-export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant }) {
+export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant, billing, license, ebicsAllowed = false, tenantId = "" }) {
   const isAdmin = auth?.currentUser?.role === "admin";
   return (
     <div>
       <h1>Stammdaten</h1>
-      <p className="sub">Auftraggeberkonten, Zugänge, Shopify-Anbindung und Darstellung – verschlüsselt lokal gespeichert.</p>
+      <p className="sub">Auftraggeberkonten, Zugänge, Shop-Anbindung und Darstellung – verschlüsselt lokal gespeichert.</p>
+      {isAdmin && billing && <BillingSettings billing={billing} license={license} tenantId={tenantId} />}
       {auth && <Users auth={auth} />}
       {isAdmin && sync && <CloudSync sync={sync} />}
       {isAdmin && <ModuleConfig data={data} updateData={updateData} />}
@@ -38,7 +47,8 @@ export default function Stammdaten({ data, updateData, auth, sync, shopify, acco
       <Accounts data={data} updateData={updateData} />
       <Suppliers data={data} updateData={updateData} />
       <ShopifySettings data={data} updateData={updateData} shopify={isAdmin ? shopify : null} />
-      {isAdmin && <EbicsSettings data={data} updateData={updateData} />}
+      {isAdmin && <EcommerceSettings data={data} updateData={updateData} />}
+      {isAdmin && <EbicsSettings data={data} updateData={updateData} allowed={ebicsAllowed} />}
       {isAdmin && accountant && <AccountantSettings accountant={accountant} />}
       <Branding data={data} updateData={updateData} />
     </div>
@@ -249,6 +259,34 @@ function ShopifySettings({ data, updateData, shopify }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [showManual, setShowManual] = useState(false);
+  const [shopInput, setShopInput] = useState("");
+  const [conn, setConn] = useState(null);        // { shopifyDomain, hasToken }
+  const [connecting, setConnecting] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    if (shopify?.getIntegration) shopify.getIntegration().then((i) => { if (alive && i) setConn(i); }).catch(() => {});
+    return () => { alive = false; };
+  }, [shopify]);
+
+  // OAuth-Verbindung starten: Browser öffnen + auf Rückkehr warten (Polling).
+  async function connect() {
+    setErr(""); setMsg(""); setConnecting(true);
+    try {
+      const url = await shopify.connect(shopInput);
+      await openExternal(url);
+      setMsg("Browser geöffnet – bestätige die Verbindung bei Shopify. Diese Seite aktualisiert sich automatisch.");
+      const started = Date.now();
+      const poll = setInterval(async () => {
+        try {
+          const i = await shopify.getIntegration();
+          if (i?.hasToken) { setConn(i); setMsg(`✓ Verbunden mit ${i.shopifyDomain || shopInput}.`); setConnecting(false); clearInterval(poll); }
+        } catch { /* weiterversuchen */ }
+        if (Date.now() - started > 5 * 60 * 1000) { setConnecting(false); clearInterval(poll); }
+      }, 3000);
+    } catch (e) { setErr(e.message || "Verbindung fehlgeschlagen."); setConnecting(false); }
+  }
 
   async function saveServer() {
     setErr(""); setMsg(""); setBusy("save");
@@ -274,12 +312,47 @@ function ShopifySettings({ data, updateData, shopify }) {
         Lege in Shopify eine Custom App mit <strong>nur Lese-Rechten</strong> an (<em>read_orders</em>, ggf. <em>read_all_orders</em>, <em>read_customers</em>) – <strong>keine</strong> Schreibrechte.
         Domain + Token werden lokal (Tresor) gespeichert; für den Nacht-Cron zusätzlich verschlüsselt auf dem Server.
       </p>
-      <label className="field"><span>Shop-Domain (…myshopify.com)</span>
-        <input type="text" value={sp.domain || ""} onChange={(e) => set({ domain: e.target.value })}
-          placeholder="dein-shop.myshopify.com" /></label>
-      <label className="field"><span>Admin-API-Token (read-only)</span>
-        <input type="password" value={sp.token || ""} onChange={(e) => set({ token: e.target.value })}
-          placeholder="shpat_… / shppa_…" /></label>
+      {/* Einfacher Weg: 1 Klick verbinden (OAuth) */}
+      {shopify && (
+        conn?.hasToken ? (
+          <div className="card" style={{ background: "rgba(61,220,151,0.08)", borderColor: "var(--ok, #3ddc97)" }}>
+            <strong style={{ color: "var(--ok, #3ddc97)" }}>✓ Mit Shopify verbunden</strong>
+            {conn.shopifyDomain && <span className="muted"> · {conn.shopifyDomain}</span>}
+            <div style={{ marginTop: 8 }}>
+              <button className="btn ghost small" onClick={() => setConn(null)}>Anderen Shop verbinden</button>
+            </div>
+          </div>
+        ) : (
+          <div className="card">
+            <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Mit einem Klick verbinden</h3>
+            <p className="note" style={{ marginTop: 0 }}>Shop-Domain eingeben, „Verbinden" klicken und im Browser bei Shopify bestätigen. Kein Token nötig.</p>
+            <div className="row">
+              <label className="field" style={{ flex: 1 }}><span>Shop-Domain</span>
+                <input type="text" value={shopInput} onChange={(e) => setShopInput(e.target.value)} placeholder="dein-shop.myshopify.com" /></label>
+              <div style={{ display: "flex", alignItems: "flex-end" }}>
+                <button className="btn" onClick={connect} disabled={connecting || !shopInput.trim()}>
+                  {connecting ? "Warte auf Bestätigung…" : "Mit Shopify verbinden"}
+                </button>
+              </div>
+            </div>
+            <button className="link-btn" style={{ marginTop: 6 }} onClick={() => setShowManual((v) => !v)}>
+              {showManual ? "Erweiterte Einrichtung ausblenden" : "Erweitert: manuell mit Token verbinden"}
+            </button>
+          </div>
+        )
+      )}
+
+      {/* Erweitert / Fallback: manuell Domain + Token */}
+      {(!shopify || showManual) && (
+        <>
+          <label className="field"><span>Shop-Domain (…myshopify.com)</span>
+            <input type="text" value={sp.domain || ""} onChange={(e) => set({ domain: e.target.value })}
+              placeholder="dein-shop.myshopify.com" /></label>
+          <label className="field"><span>Admin-API-Token (read-only)</span>
+            <input type="password" value={sp.token || ""} onChange={(e) => set({ token: e.target.value })}
+              placeholder="shpat_… / shppa_…" /></label>
+        </>
+      )}
 
       {shopify && (
         <>
@@ -301,6 +374,71 @@ function ShopifySettings({ data, updateData, shopify }) {
             <div className="spacer" />
             <button className="btn ghost" onClick={saveServer} disabled={!!busy || !sp.domain}>{busy === "save" ? "Speichere…" : "Auf Server hinterlegen"}</button>
             <button className="btn" onClick={syncNow} disabled={!!busy}>{busy === "sync" ? "Gleiche ab…" : "Jetzt abgleichen"}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function EcommerceSettings({ data, updateData }) {
+  const eco = data.ecommerce || { platform: "shopify" };
+  const platform = eco.platform || "shopify";
+  const woo = eco.woo || {};
+  const sw = eco.shopware || {};
+  const setPlatform = (p) => updateData((d) => ({ ...d, ecommerce: { ...(d.ecommerce || {}), platform: p } }));
+  const setWoo = (patch) => updateData((d) => ({ ...d, ecommerce: { ...(d.ecommerce || {}), woo: { ...((d.ecommerce || {}).woo || {}), ...patch } } }));
+  const setSw = (patch) => updateData((d) => ({ ...d, ecommerce: { ...(d.ecommerce || {}), shopware: { ...((d.ecommerce || {}).shopware || {}), ...patch } } }));
+
+  return (
+    <div className="card">
+      <h2 style={{ marginTop: 0 }}>Shop-System für den Bestell-Import</h2>
+      <p className="note">
+        Wähle dein Shop-System. Beim Laden einer Bestellnummer unter „Erstattungen" wird genau dieses System abgefragt.
+        Zugangsdaten bleiben lokal im verschlüsselten Tresor.
+      </p>
+      <label className="field" style={{ maxWidth: 320 }}><span>Plattform</span>
+        <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
+          <option value="shopify">Shopify</option>
+          <option value="woocommerce">WooCommerce</option>
+          <option value="shopware">Shopware 6</option>
+        </select>
+      </label>
+
+      {platform === "shopify" && (
+        <p className="note" style={{ marginTop: 0 }}>Shopify richtest du oben unter „Shopify-Anbindung" ein (Ein-Klick-Verbindung).</p>
+      )}
+
+      {platform === "woocommerce" && (
+        <>
+          <p className="note" style={{ marginTop: 0 }}>
+            In WooCommerce unter <strong>WooCommerce → Einstellungen → Erweitert → REST-API</strong> einen Schlüssel mit
+            <strong> nur Leserechten</strong> anlegen.
+          </p>
+          <label className="field"><span>Shop-URL</span>
+            <input type="text" value={woo.siteUrl || ""} onChange={(e) => setWoo({ siteUrl: e.target.value })} placeholder="https://dein-shop.de" /></label>
+          <div className="row">
+            <label className="field"><span>Consumer Key</span>
+              <input type="text" value={woo.consumerKey || ""} onChange={(e) => setWoo({ consumerKey: e.target.value })} placeholder="ck_…" /></label>
+            <label className="field"><span>Consumer Secret</span>
+              <input type="password" value={woo.consumerSecret || ""} onChange={(e) => setWoo({ consumerSecret: e.target.value })} placeholder="cs_…" /></label>
+          </div>
+        </>
+      )}
+
+      {platform === "shopware" && (
+        <>
+          <p className="note" style={{ marginTop: 0 }}>
+            In Shopware unter <strong>Einstellungen → System → Integrationen</strong> eine Integration mit Leserechten
+            für Bestellungen anlegen.
+          </p>
+          <label className="field"><span>Shop-URL</span>
+            <input type="text" value={sw.siteUrl || ""} onChange={(e) => setSw({ siteUrl: e.target.value })} placeholder="https://dein-shop.de" /></label>
+          <div className="row">
+            <label className="field"><span>Client-ID (Access Key ID)</span>
+              <input type="text" value={sw.clientId || ""} onChange={(e) => setSw({ clientId: e.target.value })} placeholder="SWIA…" /></label>
+            <label className="field"><span>Client-Secret</span>
+              <input type="password" value={sw.clientSecret || ""} onChange={(e) => setSw({ clientSecret: e.target.value })} placeholder="••••••••" /></label>
           </div>
         </>
       )}

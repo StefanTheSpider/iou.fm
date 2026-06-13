@@ -14,14 +14,15 @@ async function httpPost(url, body, headers = {}) {
 // Sendet den fertigen pain.001 direkt per EBICS an die Bank. Wird nur angezeigt, wenn die
 // Bankanbindung aktiviert UND von der Bank freigeschaltet ist. Andernfalls bleibt der
 // gewohnte Datei-Download der einzige Weg.
-export default function EbicsSendButton({ data, xml, meta = {}, style }) {
+export default function EbicsSendButton({ data, xml, meta = {}, style, allowed = true }) {
   const cfg = data?.config?.ebics || {};
   const keys = data?.ebicsKeys || null;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  if (!ebicsReadyToSend(cfg, keys)) return null;
+  // Nur sichtbar, wenn EBICS eingerichtet UND der Tarif es erlaubt (Bank/Sonderstatus).
+  if (!allowed || !ebicsReadyToSend(cfg, keys)) return null;
 
   async function send() {
     setErr(""); setMsg(""); setBusy(true);

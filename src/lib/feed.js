@@ -20,6 +20,20 @@ export async function getIntegration(session) {
   return r.ok ? r.json() : null;
 }
 
+// Shopify-OAuth starten: liefert die Authorize-URL, die im Browser geöffnet wird.
+export async function shopifyOAuthStart(session, shop) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/shopify/oauth-start`), {
+    method: "POST", headers: { ...auth(session), "Content-Type": "application/json" }, body: JSON.stringify({ shop }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (j.error === "oauth_not_configured") throw new Error("Shopify-Verbindung ist serverseitig noch nicht eingerichtet (App-Registrierung fehlt).");
+    if (j.error === "bad_shop") throw new Error("Bitte eine gültige Shop-Domain angeben (…myshopify.com).");
+    throw new Error(`Verbindung konnte nicht gestartet werden (${r.status}).`);
+  }
+  return j.url;
+}
+
 // Vom Cron gesammelte Stornos/Refunds/Anfragen.
 export async function getFeed(session) {
   if (!session?.tenantId) return null;

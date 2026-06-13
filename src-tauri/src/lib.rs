@@ -106,6 +106,21 @@ fn bio_disable(app: tauri::AppHandle, account: String) -> Result<(), String> {
     biometric::clear(bio_base(&app)?, &account)
 }
 
+// Öffnet eine URL im Standard-Browser des Systems (für den Shopify-OAuth-Login).
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("nur http(s)-URLs erlaubt".into());
+    }
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(target_os = "windows")]
+    let spawned = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = std::process::Command::new("xdg-open").arg(&url).spawn();
+    spawned.map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
@@ -120,7 +135,7 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![bio_available, bio_has, bio_enable, bio_unlock, bio_disable])
+        .invoke_handler(tauri::generate_handler![bio_available, bio_has, bio_enable, bio_unlock, bio_disable, open_external])
         .run(tauri::generate_context!())
         .expect("Fehler beim Starten von iou.fm");
 }
