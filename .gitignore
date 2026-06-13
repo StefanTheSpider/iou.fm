@@ -28,6 +28,11 @@ secrets.*
 server/data/
 server/node_modules/
 
+# ---- Private interne Notizen (nicht committen) ----
+DATEV-Partner-Roadmap.md
+*.private.md
+notes-intern/
+
 # ---- Betriebssystem / Editor ----
 .DS_Store
 Thumbs.db

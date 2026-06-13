@@ -83,6 +83,12 @@ Nur Lese-Rechte nötig; Zugangsdaten bleiben verschlüsselt auf dem Gerät.
 
 Tab **Rückbuchungen**: offene Chargebacks mit Status/Frist + Kennzahlen (offen/gewonnen/verloren/Gewinnquote) und Jahres-Verlauf. Tab **Stornos**: abgeglichener Überblick. Nächtlich automatisch, „Jetzt abgleichen" sofort.
 
+## 7b · Belege per E-Mail (Bestellbestätigungen & Einkäufe)
+
+Du bekommst eine persönliche Weiterleitungs-Adresse (Stammdaten → „Belege per E-Mail"). Leitest du eine Bestellbestätigung oder Einkaufs-Mail dorthin weiter, wird sie **revisionssicher** archiviert (Original unverändert, Zeitstempel, Prüfsumme) und – wenn aktiviert – automatisch an deinen Steuerberater oder direkt an DATEV (Unternehmen online) weitergeleitet. Du trägst nur die Ziel-E-Mail ein.
+
+> Hinweis: Per Mail empfangene Belege liegen serverseitig (anders als der E2E-Tresor) – das ist bei „Mail an eine Adresse" unvermeidbar. Für die steuerliche Anerkennung gehört eine Verfahrensdokumentation dazu (Vorlage liegt bei).
+
 ## 8 · Export für den Steuerberater
 
 Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als DATEV-Buchungsstapel oder CSV (Umlaut-sicher). Optional: automatischer Monatsversand der Stornos-/Erstattungs-CSV per E-Mail (Stammdaten).

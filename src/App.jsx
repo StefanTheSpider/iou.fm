@@ -12,7 +12,7 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege } from "./lib/feed.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege } from "./lib/feed.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics } from "./lib/billing.js";
 
@@ -304,6 +304,13 @@ export default function App() {
     sendNow: (month) => sendAccountantNow(sessionRef.current, month),
   }), []);
 
+  // Belege per E-Mail (Inbox-Adresse, Weiterleitung, Archiv).
+  const inbox = useMemo(() => ({
+    get: () => getInbox(sessionRef.current),
+    save: (cfg) => saveInbox(sessionRef.current, cfg),
+    belege: () => getBelege(sessionRef.current),
+  }), []);
+
   // Abo/Lizenz-Aktionen für die Stammdaten-Oberfläche.
   const billing = useMemo(() => ({
     get: () => getLicense(sessionRef.current),
@@ -461,7 +468,7 @@ export default function App() {
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} />}
             {tab === "stammdaten" && isAdmin && (
               <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify} accountant={accountant}
-                billing={billing} license={license} ebicsAllowed={ebicsAllowed} tenantId={session.tenantId}
+                billing={billing} license={license} ebicsAllowed={ebicsAllowed} tenantId={session.tenantId} inbox={inbox}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
             {tab === "support" && isOwner && <VendorSupport onOpenSession={enterSupport} />}

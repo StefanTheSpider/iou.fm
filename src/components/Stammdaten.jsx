@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import CloudSync from "./CloudSync.jsx";
 import EbicsSettings from "./EbicsSettings.jsx";
 import BillingSettings from "./BillingSettings.jsx";
+import BelegePostfach from "./BelegePostfach.jsx";
 
 // URL im System-Browser öffnen (Tauri), im Browser-Dev als neuer Tab.
 async function openExternal(url) {
@@ -33,7 +34,7 @@ function useIbanField() {
   return { value, setValue, info, setInfo, check };
 }
 
-export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant, billing, license, ebicsAllowed = false, tenantId = "" }) {
+export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant, billing, license, ebicsAllowed = false, tenantId = "", inbox = null }) {
   const isAdmin = auth?.currentUser?.role === "admin";
   return (
     <div>
@@ -48,6 +49,7 @@ export default function Stammdaten({ data, updateData, auth, sync, shopify, acco
       <Suppliers data={data} updateData={updateData} />
       <ShopifySettings data={data} updateData={updateData} shopify={isAdmin ? shopify : null} />
       {isAdmin && <EcommerceSettings data={data} updateData={updateData} />}
+      {isAdmin && inbox && <BelegePostfach inbox={inbox} />}
       {isAdmin && <EbicsSettings data={data} updateData={updateData} allowed={ebicsAllowed} />}
       {isAdmin && accountant && <AccountantSettings accountant={accountant} />}
       <Branding data={data} updateData={updateData} />

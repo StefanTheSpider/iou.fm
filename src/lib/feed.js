@@ -34,6 +34,23 @@ export async function shopifyOAuthStart(session, shop) {
   return j.url;
 }
 
+// Belege per E-Mail: Inbox-Adresse + Weiterleitungs-Konfig + Archiv.
+export async function getInbox(session) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/inbox`), { headers: auth(session) });
+  return r.ok ? r.json() : null;
+}
+export async function saveInbox(session, cfg) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/inbox`), {
+    method: "PUT", headers: { ...auth(session), "Content-Type": "application/json" }, body: JSON.stringify(cfg),
+  });
+  if (!r.ok) throw new Error(`Speichern fehlgeschlagen (${r.status}).`);
+  return r.json();
+}
+export async function getBelege(session) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/belege`), { headers: auth(session) });
+  return r.ok ? (await r.json()).belege || [] : [];
+}
+
 // Rechnungs-PDFs an Steuerberater/DATEV mailen (Belege).
 export async function sendInvoiceBelege(session, { to, files, subject, text }) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/invoices/send-belege`), {

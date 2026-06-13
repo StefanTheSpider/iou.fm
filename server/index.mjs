@@ -28,6 +28,8 @@ import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, t
 import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
+import { inboxAddress, newInboxToken, tokenFromAddress, sha256Hex, safeName } from "./inbound.mjs";
+const INBOUND_SECRET = process.env.INBOUND_SECRET || "";
 import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook } from "./stripe.mjs";
 
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://ioufm-production.up.railway.app").replace(/\/+$/, "");
@@ -259,6 +261,18 @@ function rawBody(req) {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+// Mandant anhand seines Inbox-Tokens finden (für eingehende Belege-Mails).
+async function findTenantByInboxToken(token) {
+  if (!token) return null;
+  let files = [];
+  try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return null; }
+  for (const f of files) {
+    const t = await readJson(path.join(TENANT_DIR, f));
+    if (t && t.inbox && t.inbox.token === token) return t;
+  }
+  return null;
 }
 
 // Anzahl der Benutzer eines Mandanten (für die Sitzplatz-Anzeige).
@@ -542,6 +556,96 @@ const server = http.createServer(async (req, res) => {
         });
         return send(res, 200, { ok: true, sent: files.length, to });
       } catch (e) { return send(res, 502, { error: "mail_failed", detail: e.message }); }
+    }
+
+    // ===== BELEGE PER E-MAIL (Inbox + Archiv + Weiterleitung) ================
+    // GET /api/tenants/:id/inbox – Weiterleitungs-Adresse + Forward-Konfig (erzeugt Token).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "inbox" && req.method === "GET") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      t.inbox = t.inbox || {};
+      if (!t.inbox.token) { t.inbox.token = newInboxToken(); await writeTenant(t); }
+      return send(res, 200, {
+        address: inboxAddress(t.inbox.token),
+        autoForward: !!t.inbox.autoForward,
+        datevEmail: t.inbox.datevEmail || "",
+        belegEmail: t.inbox.belegEmail || "",
+        count: (t.belege || []).length,
+        available: !!INBOUND_SECRET,
+      });
+    }
+
+    // PUT /api/tenants/:id/inbox – Weiterleitungs-Ziele setzen.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "inbox" && req.method === "PUT") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      t.inbox = t.inbox || {};
+      if (!t.inbox.token) t.inbox.token = newInboxToken();
+      t.inbox.autoForward = !!b.autoForward;
+      t.inbox.datevEmail = String(b.datevEmail || "").trim().slice(0, 200);
+      t.inbox.belegEmail = String(b.belegEmail || "").trim().slice(0, 200);
+      await writeTenant(t);
+      return send(res, 200, { ok: true });
+    }
+
+    // GET /api/tenants/:id/belege – revisionssicheres Beleg-Archiv (Metadaten).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "belege" && req.method === "GET") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      return send(res, 200, { belege: t.belege || [] });
+    }
+
+    // POST /api/inbound-email – eingehende Beleg-Mail (vom Inbound-Dienst, per Secret).
+    if (parts[0] === "api" && parts[1] === "inbound-email" && req.method === "POST") {
+      if (!INBOUND_SECRET || req.headers["x-inbound-secret"] !== INBOUND_SECRET) return send(res, 401, { error: "unauthorized" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const token = tokenFromAddress(b.to);
+      const t = await findTenantByInboxToken(token);
+      if (!t) return send(res, 404, { error: "unknown_inbox" });
+      const dir = path.join(DATA_DIR, "belege", t.tenantId);
+      await fs.mkdir(dir, { recursive: true });
+      const beId = newId();
+      const rawBuf = Buffer.from(String(b.raw || ""), "base64");
+      const sha = sha256Hex(rawBuf.length ? rawBuf : Buffer.from(String(b.subject || "") + (b.date || "")));
+      try { if (rawBuf.length) await fs.writeFile(path.join(dir, beId + ".eml"), rawBuf, { flag: "wx" }); } catch { /* write-once */ }
+      const atts = Array.isArray(b.attachments) ? b.attachments.slice(0, 50) : [];
+      const attNames = [];
+      for (const a of atts) {
+        if (!a || !a.filename || !a.content) continue;
+        const fn = beId + "_" + safeName(a.filename);
+        try { await fs.writeFile(path.join(dir, fn), Buffer.from(String(a.content), "base64"), { flag: "wx" }); attNames.push(a.filename); } catch { /* egal */ }
+      }
+      t.belege = t.belege || [];
+      t.belege.unshift({ id: beId, from: String(b.from || "").slice(0, 200), subject: String(b.subject || "").slice(0, 300), date: b.date || null, receivedAt: new Date().toISOString(), sha256: sha, attachments: attNames });
+      t.belege = t.belege.slice(0, 1000);
+      await writeTenant(t);
+      // Auto-Weiterleitung an DATEV/Steuerberater
+      let forwarded = false;
+      if (t.inbox?.autoForward && RESEND_API_KEY) {
+        const to = [t.inbox.datevEmail, t.inbox.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
+        if (to.length) {
+          const files = atts.length
+            ? atts.filter((a) => a && a.filename && a.content).map((a) => ({ filename: safeName(a.filename), content: String(a.content) }))
+            : (rawBuf.length ? [{ filename: beId + ".eml", content: String(b.raw) }] : []);
+          if (files.length) {
+            try {
+              await sendAttachmentsViaResend({ apiKey: RESEND_API_KEY, from: RESEND_FROM, to, subject: `Beleg: ${b.subject || "(ohne Betreff)"}`, text: `Automatisch von iou.fm weitergeleiteter Beleg (Eingang: ${new Date().toISOString()}).`, attachments: files });
+              forwarded = true;
+            } catch { /* Zustellung später erneut versuchbar */ }
+          }
+        }
+      }
+      return send(res, 200, { ok: true, stored: beId, forwarded });
     }
 
     // ===== BILLING / LIZENZ (Stripe SEPA-Abo) ================================
