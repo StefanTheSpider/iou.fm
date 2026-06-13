@@ -90,7 +90,7 @@ Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als D
 2. Zugangsdaten der Bank eintragen (aus dem EBICS-Vertrag).
 3. **Schlüssel erzeugen** (lokal).
 4. **INI-Brief drucken**, unterschreiben, an die Bank senden – danach schaltet die Bank dich frei.
-5. „aktiv" setzen → Button **„Per EBICS an Bank senden"**; Freigabe per photoTAN-App.
+5. „aktiv" setzen → Button **„Per EBICS an Bank senden"**; Freigabe über die TAN-/Banking-App deiner Bank (z. B. photoTAN, pushTAN, SecureGo).
 
 ## 10 · SEPA-Datei ins Online-Banking laden
 

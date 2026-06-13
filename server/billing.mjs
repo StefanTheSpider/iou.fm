@@ -45,7 +45,7 @@ export const PLANS = {
     features: [
       "Alles aus Pro",
       "EBICS-Direktversand an die Bank",
-      "Freigabe per photoTAN-App",
+      "Freigabe über die App deiner Bank",
       "Vier-Augen-Freigabe",
     ],
   },

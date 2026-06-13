@@ -29,7 +29,7 @@ export default function EbicsSendButton({ data, xml, meta = {}, style, allowed =
     try {
       const client = createEbicsClient({ cfg, keys, httpPost });
       const r = await client.uploadPayment(xml, meta);
-      setMsg(`An die Bank übergeben (Auftrag ${r?.orderId || "—"}). Bitte in der photoTAN-App freigeben.`);
+      setMsg(`An die Bank übergeben (Auftrag ${r?.orderId || "—"}). Bitte in der TAN-/Banking-App deiner Bank freigeben.`);
     } catch (e) {
       setErr(e.message || "EBICS-Versand fehlgeschlagen.");
     } finally { setBusy(false); }

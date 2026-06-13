@@ -63,7 +63,7 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Bankanbindung (EBICS) <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· optional</span></h2>
       <p className="note">
-        SEPA-Aufträge direkt aus iou.fm an die Bank übergeben – Freigabe per photoTAN-App, ohne manuellen Datei-Upload.
+        SEPA-Aufträge direkt aus iou.fm an die Bank übergeben – Freigabe über die TAN-/Banking-App deiner Bank (z. B. photoTAN, pushTAN, SecureGo), ohne manuellen Datei-Upload.
         Die EBICS-Schlüssel werden lokal erzeugt und bleiben Ende-zu-Ende verschlüsselt auf diesem Gerät; der Server sieht sie nie.
       </p>
 
@@ -127,7 +127,7 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
 
           <h3 style={{ margin: "18px 0 4px", fontSize: 14 }}>4 · Freischaltung bestätigen</h3>
           <p className="note" style={{ marginTop: 0 }}>
-            Sobald die Bank deinen Zugang aktiviert hat (Bestätigung + photoTAN-Freigabe eingerichtet), hier auf „aktiv" setzen.
+            Sobald die Bank deinen Zugang aktiviert hat (Bestätigung + App-Freigabe eingerichtet), hier auf „aktiv" setzen.
             Erst dann erscheint im Lohn-/Erstattungslauf der Button „Per EBICS senden".
           </p>
           <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
