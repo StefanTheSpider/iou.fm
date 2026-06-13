@@ -8,17 +8,37 @@ const today = () => new Date().toISOString().slice(0, 10);
 const deDate = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—");
 const norm = (n) => String(n ?? "").trim();
 
+// B2B: Die Rechnungsnummer MUSS im Verwendungszweck stehen (Zahlungszuordnung läuft
+// darüber). Steht sie nicht drin, wird sie vorangestellt – so übersteht sie auch die
+// 140-Zeichen-Kürzung von SEPA.
+function purposeWithInvoiceNo(purpose, invoiceNumber) {
+  const inv = String(invoiceNumber || "").trim();
+  const p = String(purpose || "").trim();
+  if (!inv) return p || "Rechnung";
+  if (p.toLowerCase().includes(inv.toLowerCase())) return p || `Rechnung ${inv}`;
+  return p ? `Rechnung ${inv} – ${p}` : `Rechnung ${inv}`;
+}
+
+// ArrayBuffer -> Base64 (chunk-weise, damit auch größere PDFs nicht den Stack sprengen).
+function bufToB64(buf) {
+  let bin = ""; const b = new Uint8Array(buf); const chunk = 0x8000;
+  for (let i = 0; i < b.length; i += chunk) bin += String.fromCharCode.apply(null, b.subarray(i, i + chunk));
+  return btoa(bin);
+}
+
 // Rechnungs-Modul: PDFs einlesen -> Zahlungsdaten prüfen -> eine SEPA-Datei.
 // Standard ohne KI: E-Rechnung/Heuristik + Lieferanten-Gedächtnis + Review.
-export default function Rechnungen({ data, updateData, canPay = true, userName = "" }) {
+export default function Rechnungen({ data, updateData, canPay = true, userName = "", onSendBelege = null }) {
   const accounts = data.accounts || [];
   const rows = data.invoices || [];
   const creditors = data.creditors || {};          // IBAN -> { name, bic }
-  const opts = data.config?.invoiceOpts || {};      // { useDueDate, skonto, approval }
+  const opts = data.config?.invoiceOpts || {};      // { useDueDate, skonto, approval, autoSendBelege, belegEmail, datevEmail }
   const fileRef = useRef(null);
+  const pdfStore = useRef(new Map());               // rowId -> { filename, content(b64) }, nur im Speicher
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [belegMsg, setBelegMsg] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const [warn, setWarn] = useState(null);           // Doppelzahlungs-Warnung
@@ -65,6 +85,8 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           skontoPct: "", note: "", status: "offen", selected: true,
           createdBy: userName || "—", createdAt: today(),
         };
+        // PDF-Bytes nur im Speicher halten (für optionalen Beleg-Versand) – nicht im Tresor.
+        try { const ab = await file.arrayBuffer(); pdfStore.current.set(row.id, { filename: row.fileName, content: bufToB64(ab) }); } catch { /* egal */ }
         // eslint-disable-next-line no-loop-func
         setInvoices((rs) => [row, ...rs]);
         if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) {
@@ -98,13 +120,27 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     return today();
   }
 
+  // Geprüfte Rechnungs-PDFs an Steuerberater/DATEV mailen (optional, nach Zahlung).
+  async function sendBelege(eligibleRows) {
+    const recips = [opts.belegEmail, opts.datevEmail].map((s) => String(s || "").trim()).filter(Boolean);
+    if (!opts.autoSendBelege || !recips.length || !onSendBelege) return;
+    const files = eligibleRows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
+    if (!files.length) { setBelegMsg("Hinweis: Keine PDF-Belege im Speicher – nur frisch geladene PDFs werden mitgeschickt."); return; }
+    setBelegMsg("Sende Belege …");
+    try {
+      const res = await onSendBelege({ to: recips, files });
+      setBelegMsg(`✓ ${res.sent || files.length} Beleg(e) an ${recips.join(", ")} gesendet.`);
+    } catch (e) { setBelegMsg("Beleg-Versand fehlgeschlagen: " + (e.message || "")); }
+  }
+
   function createSepa(accountId, execDate) {
     const account = accounts.find((a) => a.id === accountId);
     if (!account || !validateIban(account.iban).ok) { setError("Bitte gültiges Auftraggeberkonto wählen."); return; }
     if (!eligible.length) { setError("Keine zahlbaren Rechnungen ausgewählt."); return; }
+    const eligibleRows = eligible.map((c) => c.r); // vor dem Status-Update merken (für Beleg-Versand)
     const payments = eligible.map(({ r, cents }) => ({
       name: r.creditorName || "Empfänger", iban: cleanIban(r.iban), bic: r.bic, amountCents: cents,
-      purpose: r.purpose || `Rechnung ${r.invoiceNumber}`, endToEndId: r.invoiceNumber || "NOTPROVIDED",
+      purpose: purposeWithInvoiceNo(r.purpose, r.invoiceNumber), endToEndId: r.invoiceNumber || "NOTPROVIDED",
       invoiceNumber: r.invoiceNumber, dueDate: r.dueDate, note: r.note,
     }));
     const xml = buildSepaXml({ debtor: { name: account.name, iban: account.iban, bic: account.bic }, executionDate: execDate, payments, category: null });
@@ -127,8 +163,9 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         payments: payments.map((p) => ({ name: p.name, iban: p.iban, amountCents: p.amountCents, purpose: p.purpose, invoiceNumber: p.invoiceNumber })),
       }, ...(dd.batches || [])],
     }), true);
-    setShowModal(false); setError("");
+    setShowModal(false); setError(""); setBelegMsg("");
     setSaved(`✓ „${filename}" gespeichert (Ordner „Downloads"). ${payments.length} Rechnung${payments.length === 1 ? "" : "en"}, Summe ${formatEur(sumEligible)}. Liegt auch im Archiv.`);
+    sendBelege(eligibleRows); // optional: Belege automatisch an Steuerberater/DATEV
   }
 
   return (
@@ -145,6 +182,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         </div>
         {error && <p className="error-text">{error}</p>}
         {saved && <p className="note" style={{ color: "var(--ok, #3ddc97)" }}>{saved}</p>}
+        {belegMsg && <p className="note" style={{ color: belegMsg.startsWith("✓") ? "var(--ok, #3ddc97)" : "var(--muted)" }}>{belegMsg}</p>}
       </div>
 
       <div className="summary-bar">

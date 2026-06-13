@@ -67,7 +67,10 @@ So entsteht ein **Vier-Augen-Prinzip**: Mitarbeiter bereiten vor, nur ein Admin 
 2. Lieferanten-Gedächtnis füllt bekannte IBANs automatisch.
 3. Prüfen → als Admin SEPA-Datei erstellen.
 
-> Optional: Fälligkeit als Ausführungsdatum, Skonto, Vier-Augen-Prinzip. Doppelte Rechnungsnummern werden erkannt.
+**Belege automatisch an Steuerberater/DATEV:** In den Stammdaten beim Modul „Rechnungen" die Option „Belege automatisch versenden" aktivieren und deine Steuerberater-E-Mail (und/oder die DATEV-Beleg-E-Mail aus „Unternehmen online") eintragen. Sobald du die SEPA-Datei erstellst, gehen die geprüften Rechnungs-PDFs automatisch per Mail dorthin – bei DATEV landen sie direkt in Unternehmen online. Du musst nur die E-Mail eintragen.
+
+> Die **Rechnungsnummer steht immer im Verwendungszweck** (B2B-Zuordnung). Lädst du eine bereits bezahlte Rechnung erneut hoch, kommt sofort die Warnung „bereits bezahlt".
+> Optional: Fälligkeit als Ausführungsdatum, Skonto, Vier-Augen-Prinzip.
 
 ## 6 · Online-Shop verbinden (Shopify, WooCommerce, Shopware)
 

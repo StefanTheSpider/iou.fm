@@ -34,6 +34,22 @@ export async function shopifyOAuthStart(session, shop) {
   return j.url;
 }
 
+// Rechnungs-PDFs an Steuerberater/DATEV mailen (Belege).
+export async function sendInvoiceBelege(session, { to, files, subject, text }) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/invoices/send-belege`), {
+    method: "POST", headers: { ...auth(session), "Content-Type": "application/json" },
+    body: JSON.stringify({ to, files, subject, text }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (j.error === "mail_not_configured") throw new Error("E-Mail-Versand ist serverseitig nicht eingerichtet.");
+    if (j.error === "no_recipient") throw new Error("Keine Empfänger-E-Mail hinterlegt.");
+    if (j.error === "no_files") throw new Error("Keine PDF-Belege vorhanden (bitte vor dem Erstellen die PDFs laden).");
+    throw new Error(j.detail || `Versand fehlgeschlagen (${r.status}).`);
+  }
+  return j;
+}
+
 // Vom Cron gesammelte Stornos/Refunds/Anfragen.
 export async function getFeed(session) {
   if (!session?.tenantId) return null;

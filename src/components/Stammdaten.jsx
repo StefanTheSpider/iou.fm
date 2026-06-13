@@ -176,6 +176,19 @@ function ModuleConfig({ data, updateData }) {
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input type="checkbox" checked={!!iopts.approval} onChange={(e) => setIopt("approval", e.target.checked)} />
             <span className="note" style={{ margin: 0 }}>Vier-Augen-Prinzip (nur Admin erstellt die SEPA-Datei)</span></label>
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+            <input type="checkbox" checked={!!iopts.autoSendBelege} onChange={(e) => setIopt("autoSendBelege", e.target.checked)} />
+            <span className="note" style={{ margin: 0 }}><strong>Belege automatisch versenden</strong> – nach dem Erstellen der SEPA-Datei gehen die Rechnungs-PDFs per E-Mail raus.</span></label>
+          {iopts.autoSendBelege && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "4px 0 0 26px" }}>
+              <label className="field" style={{ maxWidth: 420 }}><span>Steuerberater-E-Mail</span>
+                <input type="email" value={iopts.belegEmail || ""} onChange={(e) => setIopt("belegEmail", e.target.value)} placeholder="kanzlei@example.de" /></label>
+              <label className="field" style={{ maxWidth: 420 }}><span>DATEV-Beleg-E-Mail (Unternehmen online, optional)</span>
+                <input type="email" value={iopts.datevEmail || ""} onChange={(e) => setIopt("datevEmail", e.target.value)} placeholder="…@datev-upload.de" /></label>
+              <span className="note" style={{ margin: 0 }}>Trage einfach deine Steuerberater-Adresse ein. Hast du bei DATEV den Belegtransfer per E-Mail eingerichtet, kommt dort die DATEV-Upload-Adresse rein – die Belege landen dann direkt in Unternehmen online. Beide Felder dürfen befüllt sein.</span>
+            </div>
+          )}
         </div>
       )}
     </div>

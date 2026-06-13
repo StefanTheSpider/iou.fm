@@ -84,6 +84,24 @@ export function isLastDayOfMonth(d = new Date()) {
   return t.getDate() === 1;
 }
 
+// Allgemeiner Versand mit beliebigen (Base64-)Anhängen – z. B. Rechnungs-PDFs an
+// Steuerberater oder die DATEV-Belegtransfer-Adresse.
+export async function sendAttachmentsViaResend({ apiKey, from, to, cc, subject, text, attachments }) {
+  const body = {
+    from, to: Array.isArray(to) ? to : [to],
+    ...(cc ? { cc: Array.isArray(cc) ? cc : [cc] } : {}),
+    subject, text,
+    attachments: (attachments || []).map((a) => ({ filename: a.filename, content: a.content })),
+  };
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.json().catch(() => ({}));
+}
+
 // Versand über Resend (HTTP-API, keine Abhängigkeit nötig).
 export async function sendViaResend({ apiKey, from, to, cc, subject, text, filename, csv }) {
   const body = {

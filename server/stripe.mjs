@@ -42,6 +42,9 @@ async function stripeApi(path, params, method = "POST") {
 }
 
 // Checkout-Session für ein SEPA-Lastschrift-Abo.
+// B2B: VOR der Zahlung werden vollständige Firmendaten verpflichtend erfasst
+// (Rechnungsadresse + Firmenname + USt-IdNr.), damit der Kunde in Stripe korrekt
+// angelegt wird und die Rechnungserstellung sauber funktioniert.
 export async function createCheckoutSession({ tenantId, plan, priceId, email, successUrl, cancelUrl }) {
   return stripeApi("/checkout/sessions", {
     mode: "subscription",
@@ -54,6 +57,14 @@ export async function createCheckoutSession({ tenantId, plan, priceId, email, su
     metadata: { tenantId, plan },
     subscription_data: { metadata: { tenantId, plan } },
     allow_promotion_codes: true,
+    // Pflicht-Firmendaten für korrekte Rechnungen:
+    billing_address_collection: "required",       // vollständige Rechnungsadresse
+    tax_id_collection: { enabled: true },          // USt-IdNr. + Firmenname
+    custom_fields: [
+      { key: "company", label: { type: "custom", custom: "Firmenname" }, type: "text", optional: false },
+    ],
+    // Adresse/USt-IdNr. auf dem Kunden speichern (auch bei späterer Wiederverwendung):
+    customer_update: { name: "auto", address: "auto" },
   });
 }
 

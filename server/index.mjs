@@ -25,7 +25,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
-import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend } from "./accountant.mjs";
+import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
 import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook } from "./stripe.mjs";
@@ -515,6 +515,33 @@ const server = http.createServer(async (req, res) => {
       t.isOwnerTenant = true;
       await writeTenant(t);
       return send(res, 200, { ok: true });
+    }
+
+    // POST /api/tenants/:id/invoices/send-belege – Rechnungs-PDFs an Steuerberater/DATEV mailen.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "invoices" && parts[4] === "send-belege" && req.method === "POST") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!RESEND_API_KEY) return send(res, 503, { error: "mail_not_configured" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const to = (Array.isArray(b.to) ? b.to : [b.to]).map((x) => String(x || "").trim()).filter(Boolean);
+      const files = (Array.isArray(b.files) ? b.files : [])
+        .filter((f) => f && f.filename && f.content)
+        .slice(0, 50)
+        .map((f) => ({ filename: String(f.filename).slice(0, 120), content: String(f.content) }));
+      if (!to.length) return send(res, 400, { error: "no_recipient" });
+      if (!files.length) return send(res, 400, { error: "no_files" });
+      try {
+        await sendAttachmentsViaResend({
+          apiKey: RESEND_API_KEY, from: RESEND_FROM, to,
+          subject: String(b.subject || `Rechnungsbelege – ${t.company || "iou.fm"}`),
+          text: String(b.text || `Anbei ${files.length} Rechnungsbeleg(e).\n\nAutomatisch gesendet von iou.fm.`),
+          attachments: files,
+        });
+        return send(res, 200, { ok: true, sent: files.length, to });
+      } catch (e) { return send(res, 502, { error: "mail_failed", detail: e.message }); }
     }
 
     // ===== BILLING / LIZENZ (Stripe SEPA-Abo) ================================
