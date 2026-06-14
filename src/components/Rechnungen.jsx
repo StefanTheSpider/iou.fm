@@ -134,7 +134,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     } catch (e) {
       const m = e.message || "";
       setBelegMsg(/Empfänger/i.test(m)
-        ? "Kein Empfänger hinterlegt – trage Steuerberater/DATEV unter Stammdaten → „Belege & Buchhaltung" ein."
+        ? "Kein Empfänger hinterlegt – trage Steuerberater/DATEV unter Stammdaten → Belege & Buchhaltung ein."
         : "Beleg-Versand fehlgeschlagen: " + m);
     }
   }
