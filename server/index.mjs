@@ -29,8 +29,9 @@ import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend, send
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
 import { inboxAddress, newInboxToken, tokenFromAddress, sha256Hex, safeName } from "./inbound.mjs";
+import { parseEmail } from "./mime.mjs";
 const INBOUND_SECRET = process.env.INBOUND_SECRET || "";
-import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook } from "./stripe.mjs";
+import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook, updateCustomer } from "./stripe.mjs";
 
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://ioufm-production.up.railway.app").replace(/\/+$/, "");
 
@@ -64,6 +65,16 @@ const SUPPORT_KEY = process.env.SUPPORT_KEY || "";
 // --- Monatlicher Buchhaltungs-Versand (Resend) ------------------------------
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const RESEND_FROM = process.env.RESEND_FROM || "iou.fm <onboarding@resend.dev>";
+// Versand-Domain (muss in Resend verifiziert sein). Aus RESEND_FROM abgeleitet, per ENV überschreibbar.
+const RESEND_FROM_EMAIL = (/<([^>]+)>/.exec(RESEND_FROM)?.[1] || RESEND_FROM || "").trim();
+const SEND_DOMAIN = process.env.SEND_DOMAIN || (RESEND_FROM_EMAIL.split("@")[1] || "iou.fm");
+// Pro-Mandant eindeutige Absenderadresse – verhindert Cross-Tenant-Versand an fremde DATEV-Postfächer.
+// (Jeder Mandant gibt nur SEINE Adresse in DATEV frei; fremde Absender werden abgelehnt.)
+const tenantSenderAddress = (t) => `belege-${t.senderToken}@${SEND_DOMAIN}`;
+const tenantFromHeader = (t) => {
+  const name = String(t.company || "iou.fm").replace(/[<>"\r\n]/g, "").slice(0, 60) || "iou.fm";
+  return `${name} <${tenantSenderAddress(t)}>`;
+};
 async function sendAccountantFor(t, ym) {
   const a = t.accountant || {};
   if (!a.enabled || !a.email) return { skipped: true, reason: "not_configured" };
@@ -547,9 +558,10 @@ const server = http.createServer(async (req, res) => {
         .map((f) => ({ filename: String(f.filename).slice(0, 120), content: String(f.content) }));
       if (!to.length) return send(res, 400, { error: "no_recipient" });
       if (!files.length) return send(res, 400, { error: "no_files" });
+      if (!t.senderToken) { t.senderToken = newInboxToken(); await writeTenant(t); } // eindeutige Absenderadresse
       try {
         await sendAttachmentsViaResend({
-          apiKey: RESEND_API_KEY, from: RESEND_FROM, to,
+          apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to,
           subject: String(b.subject || `Rechnungsbelege – ${t.company || "iou.fm"}`),
           text: String(b.text || `Anbei ${files.length} Rechnungsbeleg(e).\n\nAutomatisch gesendet von iou.fm.`),
           attachments: files,
@@ -567,7 +579,10 @@ const server = http.createServer(async (req, res) => {
       if (!t) return send(res, 404, { error: "not_found" });
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
       t.inbox = t.inbox || {};
-      if (!t.inbox.token) { t.inbox.token = newInboxToken(); await writeTenant(t); }
+      let chg = false;
+      if (!t.inbox.token) { t.inbox.token = newInboxToken(); chg = true; }
+      if (!t.senderToken) { t.senderToken = newInboxToken(); chg = true; } // eindeutige Absenderadresse
+      if (chg) await writeTenant(t);
       return send(res, 200, {
         address: inboxAddress(t.inbox.token),
         autoForward: !!t.inbox.autoForward,
@@ -575,6 +590,9 @@ const server = http.createServer(async (req, res) => {
         belegEmail: t.inbox.belegEmail || "",
         count: (t.belege || []).length,
         available: !!INBOUND_SECRET,
+        // Pro-Mandant eindeutige Absenderadresse – diese (und nur diese) in DATEV als
+        // freigegebenen Absender hinterlegen. Verhindert Versand an fremde DATEV-Postfächer.
+        senderEmail: tenantSenderAddress(t),
       });
     }
 
@@ -605,29 +623,54 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { belege: t.belege || [] });
     }
 
-    // POST /api/inbound-email – eingehende Beleg-Mail (vom Inbound-Dienst, per Secret).
+    // POST /api/inbound-email – eingehende Beleg-Mail (Postmark-Inbound ODER eigenes Format).
+    // Auth: Header x-inbound-secret ODER Query ?key=… (Postmark-Webhook-URL).
     if (parts[0] === "api" && parts[1] === "inbound-email" && req.method === "POST") {
-      if (!INBOUND_SECRET || req.headers["x-inbound-secret"] !== INBOUND_SECRET) return send(res, 401, { error: "unauthorized" });
+      const provided = req.headers["x-inbound-secret"] || url.searchParams.get("key") || "";
+      if (!INBOUND_SECRET || provided !== INBOUND_SECRET) return send(res, 401, { error: "unauthorized" });
       const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
-      const token = tokenFromAddress(b.to);
+      // Felder normalisieren (eigenes Format, Postmark-JSON ODER Cloudflare-Worker mit roher Mail).
+      const toAddr = b.to || b.OriginalRecipient || b.To || "";
+      let fromAddr = b.from || b.From || "";
+      let subject = b.subject || b.Subject || "";
+      let date = b.date || b.Date || null;
+      let rawB64 = b.raw || "";
+      if (!rawB64 && b.RawEmail) rawB64 = Buffer.from(String(b.RawEmail), "utf8").toString("base64");
+      const rawAtts = Array.isArray(b.attachments) ? b.attachments : (Array.isArray(b.Attachments) ? b.Attachments : []);
+      let atts = rawAtts
+        .map((a) => ({ filename: a.filename || a.Name, content: a.content || a.Content }))
+        .filter((a) => a.filename && a.content).slice(0, 50);
+
+      const token = tokenFromAddress(toAddr);
       const t = await findTenantByInboxToken(token);
-      if (!t) return send(res, 404, { error: "unknown_inbox" });
+      // Unbekannte/Test-Adresse: mit 200 quittieren (kein Retry), aber nichts speichern.
+      if (!t) return send(res, 200, { ok: false, ignored: "unknown_inbox" });
       const dir = path.join(DATA_DIR, "belege", t.tenantId);
       await fs.mkdir(dir, { recursive: true });
       const beId = newId();
-      const rawBuf = Buffer.from(String(b.raw || ""), "base64");
-      const sha = sha256Hex(rawBuf.length ? rawBuf : Buffer.from(String(b.subject || "") + (b.date || "")));
+      const rawBuf = Buffer.from(String(rawB64 || ""), "base64");
+      // Falls keine vorgeparsten Anhänge da sind (Cloudflare-Worker schickt nur die Roh-Mail):
+      // Anhänge + Betreff/Absender aus der MIME-Mail extrahieren.
+      if (!atts.length && rawBuf.length) {
+        try {
+          const pe = parseEmail(rawBuf.toString("utf8"));
+          if (pe.attachments && pe.attachments.length) atts = pe.attachments.slice(0, 50);
+          if (!fromAddr) fromAddr = pe.from;
+          if (!subject) subject = pe.subject;
+          if (!date) date = pe.date;
+        } catch { /* Roh-Mail bleibt als Nachweis erhalten */ }
+      }
+      const sha = sha256Hex(rawBuf.length ? rawBuf : Buffer.from(String(subject || "") + (date || "")));
       try { if (rawBuf.length) await fs.writeFile(path.join(dir, beId + ".eml"), rawBuf, { flag: "wx" }); } catch { /* write-once */ }
-      const atts = Array.isArray(b.attachments) ? b.attachments.slice(0, 50) : [];
       const attNames = [];
       for (const a of atts) {
-        if (!a || !a.filename || !a.content) continue;
         const fn = beId + "_" + safeName(a.filename);
         try { await fs.writeFile(path.join(dir, fn), Buffer.from(String(a.content), "base64"), { flag: "wx" }); attNames.push(a.filename); } catch { /* egal */ }
       }
       t.belege = t.belege || [];
-      t.belege.unshift({ id: beId, from: String(b.from || "").slice(0, 200), subject: String(b.subject || "").slice(0, 300), date: b.date || null, receivedAt: new Date().toISOString(), sha256: sha, attachments: attNames });
+      t.belege.unshift({ id: beId, from: String(fromAddr || "").slice(0, 200), subject: String(subject || "").slice(0, 300), date: date || null, receivedAt: new Date().toISOString(), sha256: sha, attachments: attNames });
       t.belege = t.belege.slice(0, 1000);
+      if (!t.senderToken) t.senderToken = newInboxToken(); // eindeutige Absenderadresse
       await writeTenant(t);
       // Auto-Weiterleitung an DATEV/Steuerberater
       let forwarded = false;
@@ -635,11 +678,11 @@ const server = http.createServer(async (req, res) => {
         const to = [t.inbox.datevEmail, t.inbox.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
         if (to.length) {
           const files = atts.length
-            ? atts.filter((a) => a && a.filename && a.content).map((a) => ({ filename: safeName(a.filename), content: String(a.content) }))
-            : (rawBuf.length ? [{ filename: beId + ".eml", content: String(b.raw) }] : []);
+            ? atts.map((a) => ({ filename: safeName(a.filename), content: String(a.content) }))
+            : (rawBuf.length ? [{ filename: beId + ".eml", content: rawB64 }] : []);
           if (files.length) {
             try {
-              await sendAttachmentsViaResend({ apiKey: RESEND_API_KEY, from: RESEND_FROM, to, subject: `Beleg: ${b.subject || "(ohne Betreff)"}`, text: `Automatisch von iou.fm weitergeleiteter Beleg (Eingang: ${new Date().toISOString()}).`, attachments: files });
+              await sendAttachmentsViaResend({ apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to, subject: `Beleg: ${subject || "(ohne Betreff)"}`, text: `Automatisch von iou.fm weitergeleiteter Beleg (Eingang: ${new Date().toISOString()}).`, attachments: files });
               forwarded = true;
             } catch { /* Zustellung später erneut versuchbar */ }
           }
@@ -722,12 +765,31 @@ const server = http.createServer(async (req, res) => {
       const raw = await rawBody(req);
       const event = verifyWebhook(raw, req.headers["stripe-signature"]);
       if (!event) return send(res, 400, { error: "bad_signature" });
-      const tenantId = event.data?.object?.metadata?.tenantId
-        || event.data?.object?.client_reference_id
-        || event.data?.object?.subscription_details?.metadata?.tenantId;
+      const obj = event.data?.object || {};
+      const tenantId = obj.metadata?.tenantId
+        || obj.client_reference_id
+        || obj.subscription_details?.metadata?.tenantId;
       if (tenantId && validId(tenantId)) {
         const t = await readTenant(tenantId);
-        if (t && applyStripeEvent(t, event)) await writeTenant(t);
+        if (t) {
+          // Idempotenz: jede Stripe-event.id nur einmal verarbeiten (Stripe retried).
+          t.stripeEventIds = Array.isArray(t.stripeEventIds) ? t.stripeEventIds : [];
+          if (event.id && t.stripeEventIds.includes(event.id)) {
+            return send(res, 200, { received: true, duplicate: true });
+          }
+          let changed = applyStripeEvent(t, event);
+          // Firmenname als Rechnungsempfänger auf den Customer schreiben (nicht SEPA-Kontoinhaber).
+          if (event.type === "checkout.session.completed" && obj.customer) {
+            const company = (obj.custom_fields || []).find((f) => f.key === "company")?.text?.value;
+            if (company) {
+              t.billingCompany = company;
+              try { await updateCustomer(obj.customer, { name: company }); } catch (e) { /* nicht blockierend */ }
+              changed = true;
+            }
+          }
+          if (event.id) { t.stripeEventIds.push(event.id); if (t.stripeEventIds.length > 200) t.stripeEventIds = t.stripeEventIds.slice(-200); changed = true; }
+          if (changed) await writeTenant(t);
+        }
       }
       return send(res, 200, { received: true });
     }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PLAN_INFO, SEAT_INFO, PRICE_NOTE } from "../lib/billing.js";
+import { PLAN_INFO, SEAT_INFO, PRICE_NOTE, baseSeatsForPlan } from "../lib/billing.js";
 
 const STATUS_LABEL = {
   active: "Aktiv", trialing: "Testphase", past_due: "Zahlung offen",
@@ -16,9 +16,10 @@ export default function BillingSettings({ billing, license, tenantId = "" }) {
 
   const lic = license || {};
   const planLabel = PLAN_INFO.find((p) => p.key === lic.plan)?.label || "–";
-  const seatsAllowed = lic.seatsAllowed || SEAT_INFO.base;
+  const baseSeats = baseSeatsForPlan(lic.plan);
+  const seatsAllowed = lic.seatsAllowed || baseSeats;
   const seatsUsed = lic.seatsUsed ?? 0;
-  const currentPacks = Math.max(0, Math.round((seatsAllowed - SEAT_INFO.base) / SEAT_INFO.pack));
+  const currentPacks = Math.max(0, Math.round((seatsAllowed - baseSeats) / SEAT_INFO.pack));
 
   async function go(action, fn) {
     setErr(""); setMsg(""); setBusy(action);
@@ -88,7 +89,7 @@ export default function BillingSettings({ billing, license, tenantId = "" }) {
 
       <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>Mitarbeiter-Plätze</h3>
       <p className="note" style={{ marginTop: 0 }}>
-        Jede Lizenz enthält {SEAT_INFO.base} Mitarbeiter. Weitere in {SEAT_INFO.pack}er-Paketen à {SEAT_INFO.packPrice} netto / Monat ({currentPacks} Paket{currentPacks === 1 ? "" : "e"} aktiv).
+        Dein Tarif enthält {baseSeats} Mitarbeiter. Weitere in {SEAT_INFO.pack}er-Paketen à {SEAT_INFO.packPrice} netto / Monat ({currentPacks} Paket{currentPacks === 1 ? "" : "e"} aktiv).
       </p>
       <div className="toolbar" style={{ margin: 0 }}>
         <button className="btn ghost" disabled={busy === "seats" || !lic.hasCustomer} onClick={addSeats}>+ {SEAT_INFO.pack} Mitarbeiter ({SEAT_INFO.packPrice})</button>

@@ -21,7 +21,7 @@ export default function Paywall({ license, onSubscribe, onManage, onLogout, onCl
         </h1>
         <p className="muted" style={{ textAlign: "center", marginTop: 0 }}>
           Wähle einen Tarif, um iou.fm weiter zu nutzen. Zahlung per SEPA-Lastschrift, monatlich kündbar.
-          Jeder Tarif enthält {SEAT_INFO.base} Mitarbeiter; weitere in {SEAT_INFO.pack}er-Paketen.
+          Inklusiv-Mitarbeiter je Tarif: Basis 2, Pro 3, Bank 5; weitere in {SEAT_INFO.pack}er-Paketen.
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 22 }}>

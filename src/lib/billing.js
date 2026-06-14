@@ -13,22 +13,25 @@ export const PLAN_INFO = [
     "Erstattungen & Stornos",
     "Shop-Anbindung (Shopify, WooCommerce, Shopware)",
     "DATEV-/CSV-Export + Archiv",
+    "2 Mitarbeiter inklusive",
   ] },
   { key: "pro", label: "Pro", price: "79,99 €", period: "/ Monat", popular: true, features: [
     "Alles aus Basis",
     "Lohnläufe (DATEV-PDF-Import)",
     "Rechnungen & E-Rechnungen",
-    "Mehrere Benutzer + Buchhalter-Versand",
+    "3 Mitarbeiter inklusive",
   ] },
   { key: "bank", label: "Bank", price: "99,99 €", period: "/ Monat", features: [
     "Alles aus Pro",
     "EBICS-Direktversand an die Bank",
     "Freigabe über die App deiner Bank",
-    "Vier-Augen-Freigabe",
+    "5 Mitarbeiter inklusive",
   ] },
 ];
 
-export const SEAT_INFO = { base: 5, pack: 3, packPrice: "19,99 €" };
+// Inklusiv-Plätze gestaffelt nach Tarif (muss zu billing.mjs passen). Weitere in 3er-Paketen.
+export const SEAT_INFO = { baseByPlan: { basis: 2, pro: 3, bank: 5 }, baseFallback: 2, pack: 3, packPrice: "19,99 €" };
+export function baseSeatsForPlan(plan) { return SEAT_INFO.baseByPlan[plan] ?? SEAT_INFO.baseFallback; }
 
 // Darf dieser Lizenzstatus EBICS nutzen? (nur Bank-Tarif zahlend oder Sonderstatus)
 export function licenseAllowsEbics(license) {

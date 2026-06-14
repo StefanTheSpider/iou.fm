@@ -6,19 +6,28 @@
 
 export const TRIAL_DAYS = 7;
 
-// Sitzplätze (Mitarbeiter-Logins): jede Lizenz enthält 5; weitere in 3er-Paketen (je 19,99 € netto).
-export const BASE_SEATS = 5;
+// Sitzplätze (Mitarbeiter-Logins): Inklusiv-Plätze gestaffelt nach Tarif.
+// Basis 2, Pro 3, Bank 5 – weitere in 3er-Paketen (je 19,99 € netto) nachkaufbar.
+export const BASE_SEATS_BY_PLAN = { basis: 2, pro: 3, bank: 5 };
+export const BASE_SEATS_FALLBACK = 2; // z. B. während der Testphase ohne gewählten Tarif
+export function baseSeatsForPlan(plan) { return BASE_SEATS_BY_PLAN[plan] ?? BASE_SEATS_FALLBACK; }
 export const SEAT_PACK = 3;
 export const SEAT_PACK_PRICE = "19,99 €";
 export function seatPriceId() { return process.env.STRIPE_PRICE_SEATS || ""; }
 
-// Sitzplätze aus den Subscription-Items berechnen (Basis 5 + Pakete * 5).
+// Sitzplätze aus den Subscription-Items berechnen:
+// Inklusiv-Plätze des gebuchten Tarifs + nachgekaufte 3er-Pakete.
 export function seatsFromSubscription(sub) {
   const items = sub?.items?.data || [];
   const seatId = seatPriceId();
   let packs = 0;
-  for (const it of items) if (seatId && it?.price?.id === seatId) packs += Number(it.quantity || 0);
-  return BASE_SEATS + packs * SEAT_PACK;
+  let plan = null;
+  for (const it of items) {
+    const p = planForPriceId(it?.price?.id);
+    if (p) plan = p;
+    if (seatId && it?.price?.id === seatId) packs += Number(it.quantity || 0);
+  }
+  return baseSeatsForPlan(plan) + packs * SEAT_PACK;
 }
 
 export const PLANS = {
@@ -110,7 +119,7 @@ export function licenseView(t) {
     trialDaysLeft,
     currentPeriodEnd: lic.currentPeriodEnd || null,
     hasCustomer: !!t.stripeCustomerId,
-    seatsAllowed: lic.seats || BASE_SEATS,
+    seatsAllowed: lic.seats || baseSeatsForPlan(lic.plan),
     isOwnerTenant: !!t.isOwnerTenant, // Vendor-Owner-Konto (per OWNER_ID freigeschaltet)
   };
 }
@@ -140,7 +149,9 @@ export function applyStripeEvent(t, event) {
     t.license.seats = seatsFromSubscription(obj);
     // Stripe-Status direkt übernehmen (active/trialing/past_due/canceled/unpaid/incomplete)
     t.license.status = obj.status || t.license.status;
-    if (obj.current_period_end) t.license.currentPeriodEnd = new Date(obj.current_period_end * 1000).toISOString();
+    // Ab Stripe-API 2025-04-30 sitzt current_period_end auf dem Item, nicht mehr auf der Sub.
+    const cpe = obj.current_period_end || obj.items?.data?.[0]?.current_period_end;
+    if (cpe) t.license.currentPeriodEnd = new Date(cpe * 1000).toISOString();
     return true;
   }
   if (type === "customer.subscription.deleted") {

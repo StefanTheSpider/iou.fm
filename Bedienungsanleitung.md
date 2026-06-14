@@ -110,7 +110,7 @@ Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als D
 
 ## 11 · Mitarbeiter & Abo
 
-- **Mitarbeiter:** Stammdaten → „Benutzer & Zugänge". Jede Lizenz enthält **5 Mitarbeiter**.
+- **Mitarbeiter:** Stammdaten → „Benutzer & Zugänge". Inklusiv-Mitarbeiter je Tarif: **Basis 2 · Pro 3 · Bank 5**.
 - **Tarif:** 7 Tage kostenlos testen, danach Tarif wählen (Basis/Pro/Bank), Zahlung per SEPA-Lastschrift. Mehr Plätze als **3er-Pakete** dazubuchbar. Verwalten/kündigen über „Abo verwalten".
 
 ## 12 · Sicherheit

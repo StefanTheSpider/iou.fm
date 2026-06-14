@@ -54,12 +54,22 @@ export default function BelegePostfach({ inbox }) {
             <span><strong>Automatisch weiterleiten</strong> – empfangene Belege gehen direkt an Steuerberater/DATEV.</span>
           </label>
           {cfg.autoForward && (
-            <div className="row" style={{ marginTop: 6 }}>
-              <label className="field"><span>Steuerberater-E-Mail</span>
-                <input type="email" value={cfg.belegEmail || ""} onChange={(e) => set({ belegEmail: e.target.value })} placeholder="kanzlei@example.de" /></label>
-              <label className="field"><span>DATEV-Beleg-E-Mail (optional)</span>
-                <input type="email" value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@datev-upload.de" /></label>
-            </div>
+            <>
+              <div className="row" style={{ marginTop: 6 }}>
+                <label className="field"><span>Steuerberater-E-Mail</span>
+                  <input type="email" value={cfg.belegEmail || ""} onChange={(e) => set({ belegEmail: e.target.value })} placeholder="kanzlei@example.de" /></label>
+                <label className="field"><span>DATEV-Beleg-E-Mail (optional)</span>
+                  <input type="email" value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@datev-upload.de" /></label>
+              </div>
+              {cfg.datevEmail && cfg.senderEmail && (
+                <p className="note" style={{ background: "rgba(201,162,75,.12)", border: "1px solid rgba(201,162,75,.4)", borderRadius: 8, padding: "10px 12px", color: "#e7c982", marginTop: 4 }}>
+                  ⚠️ <strong>Wichtig für DATEV:</strong> DATEV nimmt nur Mails von freigegebenen Absendern an.
+                  Hinterlege in DATEV Unternehmen online unter <em>Belegtransfer → freigegebene Absender</em> diese Adresse:
+                  <br /><code style={{ userSelect: "all" }}>{cfg.senderEmail}</code>
+                  <button className="btn ghost small" style={{ marginLeft: 8 }} onClick={() => { try { navigator.clipboard.writeText(cfg.senderEmail); setMsg("Absender kopiert."); } catch { /* egal */ } }}>Kopieren</button>
+                </p>
+              )}
+            </>
           )}
 
           <div className="toolbar" style={{ marginBottom: 0 }}>

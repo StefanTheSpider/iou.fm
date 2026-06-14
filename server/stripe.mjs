@@ -4,9 +4,12 @@ import crypto from "node:crypto";
 
 const SECRET = process.env.STRIPE_SECRET_KEY || "";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
+// Manuelle Tax Rate (z. B. 19 % DE, "exclusive"). NICHT Stripe Tax (kostet 0,5 %/Transaktion).
+const TAX_RATE = (process.env.STRIPE_TAX_RATE_ID || "").trim();
 const API = "https://api.stripe.com/v1";
 
 export function stripeConfigured() { return Boolean(SECRET); }
+export function taxRateConfigured() { return Boolean(TAX_RATE); }
 
 // Objekt -> Stripe-Form-Encoding (verschachtelt: a[b][c]=v, arr[0]=v).
 function formEncode(obj, prefix = "", out = []) {
@@ -55,17 +58,28 @@ export async function createCheckoutSession({ tenantId, plan, priceId, email, su
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: { tenantId, plan },
-    subscription_data: { metadata: { tenantId, plan } },
+    subscription_data: {
+      metadata: { tenantId, plan },
+      // Manuelle Tax Rate anhängen (netto + USt obendrauf). KEIN automatic_tax / Stripe Tax.
+      default_tax_rates: TAX_RATE ? [TAX_RATE] : undefined,
+    },
     allow_promotion_codes: true,
     // Pflicht-Firmendaten für korrekte Rechnungen:
     billing_address_collection: "required",       // vollständige Rechnungsadresse
-    tax_id_collection: { enabled: true },          // USt-IdNr. + Firmenname
+    tax_id_collection: { enabled: true },          // USt-IdNr.
     custom_fields: [
       { key: "company", label: { type: "custom", custom: "Firmenname" }, type: "text", optional: false },
     ],
-    // Adresse/USt-IdNr. auf dem Kunden speichern (auch bei späterer Wiederverwendung):
-    customer_update: { name: "auto", address: "auto" },
+    // WICHTIG: KEIN customer_update – ohne übergebenen `customer` ist der Parameter
+    // ungültig und würde den Checkout abbrechen. Der Firmenname wird nach Abschluss
+    // im Webhook (checkout.session.completed) sauber auf den Customer geschrieben,
+    // damit Rechnungen auf die Firma laufen (nicht auf den SEPA-Kontoinhaber).
   });
+}
+
+// Customer-Stammdaten setzen (z. B. Firmenname als Rechnungsempfänger nach dem Checkout).
+export async function updateCustomer(customerId, fields) {
+  return stripeApi(`/customers/${customerId}`, fields);
 }
 
 // Kundenportal (Abo verwalten / kündigen / Zahlungsmittel ändern).
@@ -86,7 +100,7 @@ export async function setSeatPacks({ subId, seatPriceId, packs }) {
   const existing = items.find((it) => it.price?.id === seatPriceId);
   const update = existing
     ? { items: [{ id: existing.id, quantity: Math.max(0, packs) }], proration_behavior: "create_prorations" }
-    : { items: [{ price: seatPriceId, quantity: Math.max(1, packs) }], proration_behavior: "create_prorations" };
+    : { items: [{ price: seatPriceId, quantity: Math.max(1, packs), tax_rates: TAX_RATE ? [TAX_RATE] : undefined }], proration_behavior: "create_prorations" };
   return stripeApi(`/subscriptions/${subId}`, update);
 }
 

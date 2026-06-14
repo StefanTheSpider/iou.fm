@@ -1,15 +1,14 @@
-// Cloudflare Email Worker für iou.fm – empfängt Belege-Mails und schickt sie als
-// sauberes JSON (inkl. extrahierter Anhänge) an den Hub-Endpunkt /api/inbound-email.
-//
-// Warum hier (und nicht im Hub) geparst wird: Der Hub bleibt absichtlich ohne externe
-// Abhängigkeiten. Das MIME-Parsing (Anhänge rausziehen) macht der Worker mit postal-mime.
+// Cloudflare Email Worker für iou.fm – ABHÄNGIGKEITSFREI (direkt im Cloudflare-
+// Dashboard einfügbar, kein npm/CLI nötig). Schickt die rohe Mail + Absender/Betreff
+// an den Hub-Endpunkt /api/inbound-email. Das Extrahieren der PDF-Anhänge übernimmt
+// der Hub (server/mime.mjs).
 //
 // Einrichtung: siehe INBOUND_SETUP.md
-//   - Domain bei Cloudflare, Email Routing aktiviert
-//   - Route: belege-*@<deine-domain>  ->  dieser Worker
-//   - Secrets/Vars im Worker:  HUB_URL,  INBOUND_SECRET
-//   - Dependency:  npm i postal-mime   (wird per wrangler gebündelt)
-import PostalMime from "postal-mime";
+//   - Empfangs-Domain komplett bei Cloudflare (Email Routing aktiviert)
+//   - Routing rule: Catch-all  ->  Send to a Worker  ->  dieser Worker
+//   - Worker-Variablen (Settings → Variables):
+//       HUB_URL        = https://ioufm-production.up.railway.app
+//       INBOUND_SECRET = <dasselbe Geheimnis wie im Hub>
 
 function toB64(buf) {
   let bin = ""; const b = new Uint8Array(buf); const chunk = 0x8000;
@@ -20,22 +19,14 @@ function toB64(buf) {
 export default {
   async email(message, env) {
     const rawBuf = await new Response(message.raw).arrayBuffer();
-    const parsed = await PostalMime.parse(rawBuf);
-    const attachments = (parsed.attachments || []).map((a) => ({
-      filename: a.filename || "anhang",
-      content: toB64(a.content),
-      contentType: a.mimeType || "application/octet-stream",
-    }));
     await fetch(env.HUB_URL.replace(/\/+$/, "") + "/api/inbound-email", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-inbound-secret": env.INBOUND_SECRET },
       body: JSON.stringify({
         to: message.to,
         from: message.from,
-        subject: parsed.subject || "",
-        date: parsed.date || null,
+        subject: (message.headers && message.headers.get("subject")) || "",
         raw: toB64(rawBuf),
-        attachments,
       }),
     });
   },

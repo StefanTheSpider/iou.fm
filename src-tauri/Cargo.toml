@@ -1,6 +1,6 @@
 [package]
 name = "iou-fm"
-version = "0.2.19"
+version = "0.2.20"
 description = "iou.fm – IBAN · Order · Überweisung"
 authors = ["fork and merge UG"]
 edition = "2021"

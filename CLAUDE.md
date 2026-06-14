@@ -27,7 +27,7 @@ Dateien ändern ist ok; Git (commit/push/Release) macht der User bzw. `release.s
 
 ## Tarife (Stand jetzt, netto/B2B)
 Basis 39,99 € · Pro 79,99 € · Bank 99,99 € (EBICS nur im Bank-Tarif) · +3 Mitarbeiter 19,99 €.
-5 Mitarbeiter je Lizenz inklusive. 7 Tage Test. Stripe SEPA-Lastschrift. Durchsetzung über `BILLING_ENFORCE=1`.
+Inklusiv-Mitarbeiter gestaffelt: Basis 2 · Pro 3 · Bank 5; weitere als +3er-Pakete. 7 Tage Test. Stripe SEPA-Lastschrift. Durchsetzung über `BILLING_ENFORCE=1`.
 
 ## Architektur-Kurz
 - Tauri-App (`src/`), Sync-Hub auf Railway (`server/`, node:http, keine externen Deps), E2E-verschlüsselt.

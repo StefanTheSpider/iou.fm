@@ -189,6 +189,7 @@ function ModuleConfig({ data, updateData }) {
               <label className="field" style={{ maxWidth: 420 }}><span>DATEV-Beleg-E-Mail (Unternehmen online, optional)</span>
                 <input type="email" value={iopts.datevEmail || ""} onChange={(e) => setIopt("datevEmail", e.target.value)} placeholder="…@datev-upload.de" /></label>
               <span className="note" style={{ margin: 0 }}>Trage einfach deine Steuerberater-Adresse ein. Hast du bei DATEV den Belegtransfer per E-Mail eingerichtet, kommt dort die DATEV-Upload-Adresse rein – die Belege landen dann direkt in Unternehmen online. Beide Felder dürfen befüllt sein.</span>
+              <span className="note" style={{ margin: 0 }}>⚠️ Für DATEV: Die feste iou.fm-Absenderadresse muss in DATEV einmal als freigegebener Absender hinterlegt werden – sie steht weiter oben unter „Belege per E-Mail" zum Kopieren.</span>
             </div>
           )}
         </div>
