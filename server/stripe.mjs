@@ -82,6 +82,12 @@ export async function updateCustomer(customerId, fields) {
   return stripeApi(`/customers/${customerId}`, fields);
 }
 
+// Alle Subscriptions inkl. Customer (für die Owner-Kundenliste). Bis 100 – reicht für die
+// Self-Distribution-Phase; bei mehr Kunden später paginieren (starting_after).
+export async function listSubscriptionsForOwner() {
+  return stripeApi("/subscriptions?status=all&limit=100&expand[]=data.customer", null, "GET");
+}
+
 // Kundenportal (Abo verwalten / kündigen / Zahlungsmittel ändern).
 export async function createPortalSession({ customerId, returnUrl }) {
   return stripeApi("/billing_portal/sessions", { customer: customerId, return_url: returnUrl });

@@ -14,7 +14,7 @@ import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
 import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege } from "./lib/feed.js";
 import { invoke } from "@tauri-apps/api/core";
-import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics } from "./lib/billing.js";
+import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics, getOwnerCustomers } from "./lib/billing.js";
 
 // URL im System-Browser öffnen (Tauri), sonst neuer Tab.
 async function openExternal(url) {
@@ -319,6 +319,7 @@ export default function App() {
     portal: () => openPortal(sessionRef.current),
     seats: (packs) => setSeatPacks(sessionRef.current, packs),
     claimOwner: (ownerId) => claimOwner(sessionRef.current, ownerId),
+    customers: () => getOwnerCustomers(sessionRef.current),
     open: openExternal,
     refresh: refreshLicense,
   }), [refreshLicense]);

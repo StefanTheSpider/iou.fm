@@ -32,7 +32,7 @@ export function seatsFromSubscription(sub) {
 
 export const PLANS = {
   basis: {
-    key: "basis", label: "Basis", price: "39,99 €", period: "/ Monat", priceEnv: "STRIPE_PRICE_BASIS",
+    key: "basis", label: "Basis", price: "49,99 €", period: "/ Monat", priceEnv: "STRIPE_PRICE_BASIS",
     features: [
       "SEPA-Sammelüberweisungen (pain.001)",
       "Erstattungen & Stornos",
@@ -41,7 +41,7 @@ export const PLANS = {
     ],
   },
   pro: {
-    key: "pro", label: "Pro", price: "79,99 €", period: "/ Monat", priceEnv: "STRIPE_PRICE_PRO", popular: true,
+    key: "pro", label: "Pro", price: "99,99 €", period: "/ Monat", priceEnv: "STRIPE_PRICE_PRO", popular: true,
     features: [
       "Alles aus Basis",
       "Lohnläufe (DATEV-PDF-Import)",
@@ -50,7 +50,7 @@ export const PLANS = {
     ],
   },
   bank: {
-    key: "bank", label: "Bank", price: "99,99 €", period: "/ Monat", priceEnv: "STRIPE_PRICE_BANK",
+    key: "bank", label: "Bank", price: "169,99 €", period: "/ Monat", priceEnv: "STRIPE_PRICE_BANK",
     features: [
       "Alles aus Pro",
       "EBICS-Direktversand an die Bank",

@@ -26,7 +26,7 @@ Dateien ändern ist ok; Git (commit/push/Release) macht der User bzw. `release.s
 - Diese Trennung ist absolut: Owner-Funktionen erscheinen nur im Owner-Account, nie bei T&T.
 
 ## Tarife (Stand jetzt, netto/B2B)
-Basis 39,99 € · Pro 79,99 € · Bank 99,99 € (EBICS nur im Bank-Tarif) · +3 Mitarbeiter 19,99 €.
+Basis 49,99 € · Pro 99,99 € · Bank 169,99 € (EBICS nur im Bank-Tarif) · +3 Mitarbeiter 19,99 €.
 Inklusiv-Mitarbeiter gestaffelt: Basis 2 · Pro 3 · Bank 5; weitere als +3er-Pakete. 7 Tage Test. Stripe SEPA-Lastschrift. Durchsetzung über `BILLING_ENFORCE=1`.
 
 ## Architektur-Kurz

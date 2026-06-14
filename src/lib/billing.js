@@ -8,20 +8,20 @@ const auth = (s) => ({ Authorization: `Bearer ${s.accessKey}` });
 // Anzeige-Infos der Tarife (müssen zu billing.mjs im Hub passen). Alle Preise NETTO (B2B).
 export const PRICE_NOTE = "Alle Preise netto, zzgl. USt.";
 export const PLAN_INFO = [
-  { key: "basis", label: "Basis", price: "39,99 €", period: "/ Monat", features: [
+  { key: "basis", label: "Basis", price: "49,99 €", period: "/ Monat", features: [
     "SEPA-Sammelüberweisungen (pain.001)",
     "Erstattungen & Stornos",
     "Shop-Anbindung (Shopify, WooCommerce, Shopware)",
     "DATEV-/CSV-Export + Archiv",
     "2 Mitarbeiter inklusive",
   ] },
-  { key: "pro", label: "Pro", price: "79,99 €", period: "/ Monat", popular: true, features: [
+  { key: "pro", label: "Pro", price: "99,99 €", period: "/ Monat", popular: true, features: [
     "Alles aus Basis",
     "Lohnläufe (DATEV-PDF-Import)",
     "Rechnungen & E-Rechnungen",
     "3 Mitarbeiter inklusive",
   ] },
-  { key: "bank", label: "Bank", price: "99,99 €", period: "/ Monat", features: [
+  { key: "bank", label: "Bank", price: "169,99 €", period: "/ Monat", features: [
     "Alles aus Pro",
     "EBICS-Direktversand an die Bank",
     "Freigabe über die App deiner Bank",
@@ -59,6 +59,18 @@ async function postBilling(session, sub, payload) {
     throw new Error(j.detail || `Fehler (${r.status}).`);
   }
   return j;
+}
+
+// Kundenliste aus Stripe (nur Owner-Konto). Liefert { customers, count, mrr } oder null.
+export async function getOwnerCustomers(session) {
+  if (!session?.tenantId) return null;
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/owner/customers`), { headers: auth(session) });
+  if (!r.ok) {
+    if (r.status === 403) throw new Error("Nur im Owner-Konto verfügbar.");
+    if (r.status === 503) throw new Error("Stripe ist serverseitig noch nicht eingerichtet.");
+    throw new Error(`Laden fehlgeschlagen (${r.status}).`);
+  }
+  return r.json();
 }
 
 export const startCheckout = (session, plan, email) => postBilling(session, "checkout", { plan, email });

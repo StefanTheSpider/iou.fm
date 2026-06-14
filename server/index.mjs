@@ -27,12 +27,12 @@ import crypto from "node:crypto";
 import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
 import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
-import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
+import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, planForPriceId, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
 import { inboxAddress, newInboxToken, tokenFromAddress, sha256Hex, safeName } from "./inbound.mjs";
 import { parseEmail } from "./mime.mjs";
 import { emailToPdf } from "./emailpdf.mjs";
 const INBOUND_SECRET = process.env.INBOUND_SECRET || "";
-import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook, updateCustomer } from "./stripe.mjs";
+import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook, updateCustomer, listSubscriptionsForOwner } from "./stripe.mjs";
 
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://ioufm-production.up.railway.app").replace(/\/+$/, "");
 
@@ -769,6 +769,46 @@ const server = http.createServer(async (req, res) => {
       view.seatsUsed = await countTenantUsers(id);
       view.billingAvailable = stripeConfigured();
       return send(res, 200, view);
+    }
+
+    // GET /api/tenants/:id/owner/customers – Kundenliste aus Stripe (NUR Owner-Konto).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "owner" && parts[4] === "customers" && req.method === "GET") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!t.isOwnerTenant) return send(res, 403, { error: "owner_only" }); // nur das per OWNER_ID freigeschaltete Konto
+      if (!stripeConfigured()) return send(res, 503, { error: "billing_not_configured" });
+      try {
+        const resp = await listSubscriptionsForOwner();
+        const subs = resp.data || [];
+        let mrrCents = 0;
+        const customers = subs.map((s) => {
+          const items = s.items?.data || [];
+          let planKey = null, monthlyCents = 0, currency = "eur", periodEnd = null;
+          for (const it of items) {
+            const p = it.price || {};
+            const pk = planForPriceId(p.id); if (pk) planKey = pk;
+            monthlyCents += Number(p.unit_amount || 0) * Number(it.quantity || 1);
+            if (p.currency) currency = p.currency;
+            if (it.current_period_end) periodEnd = it.current_period_end;
+          }
+          const cust = (s.customer && typeof s.customer === "object") ? s.customer : {};
+          if (s.status === "active" || s.status === "trialing") mrrCents += monthlyCents;
+          return {
+            company: cust.name || "", email: cust.email || "",
+            plan: planKey ? (PLANS[planKey]?.label || planKey) : "—",
+            status: s.status, monthly: Math.round(monthlyCents) / 100, currency: currency.toUpperCase(),
+            since: s.created ? new Date(s.created * 1000).toISOString() : null,
+            currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+            cancelAtPeriodEnd: !!s.cancel_at_period_end,
+          };
+        });
+        const rank = { active: 0, trialing: 1, past_due: 2, unpaid: 3, canceled: 4 };
+        customers.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || String(b.since || "").localeCompare(String(a.since || "")));
+        return send(res, 200, { customers, count: customers.length, mrr: Math.round(mrrCents) / 100, currency: "EUR" });
+      } catch (e) { return send(res, 502, { error: "stripe_failed", detail: e.message }); }
     }
 
     // POST /api/tenants/:id/billing/checkout { plan } – Stripe-Checkout-URL (Abo).

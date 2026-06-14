@@ -12,9 +12,9 @@ Stripe-Dashboard → **Produkte** → je Tarif ein Produkt mit **wiederkehrendem
 
 | Produkt | Netto-Preis / Monat | Abrechnung | ENV-Variable |
 |---|---|---|---|
-| iou.fm **Basis** | **39,99 €** | monatlich | `STRIPE_PRICE_BASIS` |
-| iou.fm **Pro** | **79,99 €** | monatlich | `STRIPE_PRICE_PRO` |
-| iou.fm **Bank** | **99,99 €** | monatlich | `STRIPE_PRICE_BANK` |
+| iou.fm **Basis** | **49,99 €** | monatlich | `STRIPE_PRICE_BASIS` |
+| iou.fm **Pro** | **99,99 €** | monatlich | `STRIPE_PRICE_PRO` |
+| iou.fm **Bank** | **169,99 €** | monatlich | `STRIPE_PRICE_BANK` |
 | iou.fm **+3 Mitarbeiter** | **19,99 €** | monatlich (Menge = Anzahl 3er-Pakete) | `STRIPE_PRICE_SEATS` |
 
 Nach dem Speichern jeweils die **Preis-ID** kopieren (beginnt mit `price_…`).
