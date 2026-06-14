@@ -1,7 +1,7 @@
 {
   "name": "iou-fm",
   "private": true,
-  "version": "0.2.23",
+  "version": "0.2.24",
   "type": "module",
   "description": "iou.fm – IBAN · Order · Überweisung. Lokale, Ende-zu-Ende verschlüsselte SEPA-Zahlungs-App (Löhne + Erstattungen/Sammelüberweisung). Von fork and merge UG.",
   "scripts": {

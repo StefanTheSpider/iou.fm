@@ -37,6 +37,11 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
   }
   function copyAddr() { try { navigator.clipboard.writeText(cfg.address); setMsg("Adresse kopiert."); } catch { /* egal */ } }
   function copySender() { try { navigator.clipboard.writeText(cfg.senderEmail); setMsg("Absenderadresse kopiert."); } catch { /* egal */ } }
+  async function confirmDone() {
+    setErr(""); setBusy("confirm");
+    try { await inbox.clearConfirm(); set({ datevConfirmLink: "" }); setMsg("Erledigt – Hinweis ausgeblendet."); }
+    catch (e) { setErr(e.message || "Fehler."); } finally { setBusy(""); }
+  }
 
   return (
     <div className="card">
@@ -57,8 +62,9 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
             <p className="note" style={{ background: "rgba(90,217,160,.12)", border: "1px solid rgba(90,217,160,.45)", borderRadius: 8, padding: "12px 14px", color: "#bdf0d6" }}>
               ✅ <strong>DATEV-Bestätigung empfangen.</strong> Gib deinen iou.fm-Absender in DATEV frei – ein Klick genügt:
               <br />
-              <button className="btn" style={{ marginTop: 8 }} onClick={() => onOpen && onOpen(cfg.datevConfirmLink)}>DATEV-Absender jetzt bestätigen</button>
+              <button className="btn" style={{ marginTop: 8 }} onClick={() => { if (onOpen) onOpen(cfg.datevConfirmLink); setMsg("Bestätigungsseite geöffnet. Nach der DATEV-Freigabe bitte auf Erledigt klicken."); }}>DATEV-Absender jetzt bestätigen</button>
               <button className="btn ghost small" style={{ marginLeft: 8 }} onClick={() => { try { navigator.clipboard.writeText(cfg.datevConfirmLink); setMsg("Link kopiert."); } catch { /* egal */ } }}>Link kopieren</button>
+              <button className="btn ghost small" style={{ marginLeft: 8 }} disabled={busy === "confirm"} onClick={confirmDone}>{busy === "confirm" ? "…" : "Erledigt – ausblenden"}</button>
             </p>
           )}
 

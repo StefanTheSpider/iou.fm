@@ -30,6 +30,7 @@ import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopif
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
 import { inboxAddress, newInboxToken, tokenFromAddress, sha256Hex, safeName } from "./inbound.mjs";
 import { parseEmail } from "./mime.mjs";
+import { emailToPdf } from "./emailpdf.mjs";
 const INBOUND_SECRET = process.env.INBOUND_SECRET || "";
 import { stripeConfigured, createCheckoutSession, createPortalSession, setSeatPacks, verifyWebhook, updateCustomer } from "./stripe.mjs";
 
@@ -631,6 +632,8 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
       t.inbox = t.inbox || {};
       if (!t.inbox.token) t.inbox.token = newInboxToken();
+      // DATEV-Bestätigungshinweis ausblenden (erledigt) – ohne andere Felder zu verändern.
+      if (b.clearDatevConfirm) { delete t.datevConfirm; await writeTenant(t); return send(res, 200, { ok: true, cleared: true }); }
       t.inbox.autoForward = !!b.autoForward;
       t.inbox.datevEmail = String(b.datevEmail || "").trim().slice(0, 200);
       t.inbox.belegEmail = String(b.belegEmail || "").trim().slice(0, 200);
@@ -691,46 +694,67 @@ const server = http.createServer(async (req, res) => {
       await fs.mkdir(dir, { recursive: true });
       const beId = newId();
       const rawBuf = Buffer.from(String(rawB64 || ""), "base64");
-      // Falls keine vorgeparsten Anhänge da sind (Cloudflare-Worker schickt nur die Roh-Mail):
-      // Anhänge + Betreff/Absender aus der MIME-Mail extrahieren.
-      if (!atts.length && rawBuf.length) {
+      // Roh-Mail parsen: Anhänge + Betreff/Absender + lesbarer Text-Inhalt (für Body-PDF).
+      let bodyText = "";
+      if (rawBuf.length) {
         try {
           const pe = parseEmail(rawBuf.toString("utf8"));
-          if (pe.attachments && pe.attachments.length) atts = pe.attachments.slice(0, 50);
+          if (!atts.length && pe.attachments?.length) atts = pe.attachments.slice(0, 50);
           if (!fromAddr) fromAddr = pe.from;
           if (!subject) subject = pe.subject;
           if (!date) date = pe.date;
+          bodyText = pe.text || "";
         } catch { /* Roh-Mail bleibt als Nachweis erhalten */ }
       }
       const sha = sha256Hex(rawBuf.length ? rawBuf : Buffer.from(String(subject || "") + (date || "")));
+      // 1) Original-Mail revisionssicher ablegen (write-once) – unveränderbarer GoBD-Nachweis.
       try { if (rawBuf.length) await fs.writeFile(path.join(dir, beId + ".eml"), rawBuf, { flag: "wx" }); } catch { /* write-once */ }
+
+      // 2) Anhänge ablegen; PDFs (= direkt ablegbare Belege) und Bilder separat merken.
       const attNames = [];
+      const pdfAttFiles = [];
+      const imgAttFiles = [];
       for (const a of atts) {
         const fn = beId + "_" + safeName(a.filename);
         try { await fs.writeFile(path.join(dir, fn), Buffer.from(String(a.content), "base64"), { flag: "wx" }); attNames.push(a.filename); } catch { /* egal */ }
+        if (/\.pdf$/i.test(a.filename || "")) pdfAttFiles.push({ filename: safeName(a.filename), content: String(a.content) });
+        else if (/\.(png|jpe?g|gif|webp|tiff?)$/i.test(a.filename || "")) imgAttFiles.push({ filename: safeName(a.filename), content: String(a.content) });
       }
+
+      // 3) Kein PDF-Anhang? → E-Mail-INHALT (z. B. Bestellbestätigung im Text mit Artikelliste)
+      //    als PDF-Beleg rendern, revisionssicher ablegen und genau dieses PDF weiterleiten.
+      let bodyPdfFile = null;
+      if (!pdfAttFiles.length) {
+        try {
+          const pdfBuf = emailToPdf({ subject, from: fromAddr, to: toAddr, date: date || new Date().toISOString(), text: bodyText });
+          try { await fs.writeFile(path.join(dir, beId + "_beleg.pdf"), pdfBuf, { flag: "wx" }); } catch { /* write-once */ }
+          bodyPdfFile = { filename: "Beleg_" + beId.slice(0, 8) + ".pdf", content: pdfBuf.toString("base64") };
+          attNames.push(bodyPdfFile.filename);
+        } catch { /* Fallback: .eml bleibt als Nachweis */ }
+      }
+
       t.belege = t.belege || [];
       t.belege.unshift({ id: beId, from: String(fromAddr || "").slice(0, 200), subject: String(subject || "").slice(0, 300), date: date || null, receivedAt: new Date().toISOString(), sha256: sha, attachments: attNames });
       t.belege = t.belege.slice(0, 1000);
       if (!t.senderToken) t.senderToken = newInboxToken(); // eindeutige Absenderadresse
       await writeTenant(t);
-      // Auto-Weiterleitung an DATEV/Steuerberater
+
+      // Auto-Weiterleitung an DATEV/Steuerberater: PDF-Anhänge bevorzugt, sonst das gerenderte
+      // Body-PDF (+ etwaige Bild-Anhänge). Nur als letzter Fallback die .eml.
       let forwarded = false;
       if (t.inbox?.autoForward && RESEND_API_KEY) {
         const to = [t.inbox.datevEmail, t.inbox.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
-        if (to.length) {
-          const files = atts.length
-            ? atts.map((a) => ({ filename: safeName(a.filename), content: String(a.content) }))
-            : (rawBuf.length ? [{ filename: beId + ".eml", content: rawB64 }] : []);
-          if (files.length) {
-            try {
-              await sendAttachmentsViaResend({ apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to, subject: `Beleg: ${subject || "(ohne Betreff)"}`, text: `Automatisch von iou.fm weitergeleiteter Beleg (Eingang: ${new Date().toISOString()}).`, attachments: files });
-              forwarded = true;
-            } catch { /* Zustellung später erneut versuchbar */ }
-          }
+        const files = pdfAttFiles.length
+          ? [...pdfAttFiles, ...imgAttFiles]
+          : (bodyPdfFile ? [bodyPdfFile, ...imgAttFiles] : (rawBuf.length ? [{ filename: beId + ".eml", content: rawB64 }] : []));
+        if (to.length && files.length) {
+          try {
+            await sendAttachmentsViaResend({ apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to, subject: `Beleg: ${subject || "(ohne Betreff)"}`, text: `Automatisch von iou.fm weitergeleiteter Beleg (Eingang: ${new Date().toISOString()}).`, attachments: files });
+            forwarded = true;
+          } catch { /* Zustellung später erneut versuchbar */ }
         }
       }
-      return send(res, 200, { ok: true, stored: beId, forwarded });
+      return send(res, 200, { ok: true, stored: beId, forwarded, bodyPdf: !!bodyPdfFile });
     }
 
     // ===== BILLING / LIZENZ (Stripe SEPA-Abo) ================================

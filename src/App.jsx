@@ -308,6 +308,7 @@ export default function App() {
   const inbox = useMemo(() => ({
     get: () => getInbox(sessionRef.current),
     save: (cfg) => saveInbox(sessionRef.current, cfg),
+    clearConfirm: () => saveInbox(sessionRef.current, { clearDatevConfirm: true }),
     belege: () => getBelege(sessionRef.current),
   }), []);
 

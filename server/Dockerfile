@@ -12,6 +12,7 @@ COPY billing.mjs ./
 COPY stripe.mjs ./
 COPY inbound.mjs ./
 COPY mime.mjs ./
+COPY emailpdf.mjs ./
 COPY accountant.mjs ./
 ENV NODE_ENV=production
 ENV DATA_DIR=/data
