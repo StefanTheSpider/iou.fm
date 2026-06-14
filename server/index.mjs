@@ -275,15 +275,35 @@ function rawBody(req) {
 }
 
 // Mandant anhand seines Inbox-Tokens finden (für eingehende Belege-Mails).
+// Findet den Mandanten zu einem Belege-Token. `kind` zeigt an, ob die Mail an die
+// Empfangs-Adresse (inbox.token) oder an die Absender-Adresse (senderToken) ging –
+// Letzteres nutzen wir, um z. B. die DATEV-Absenderbestätigung abzufangen.
 async function findTenantByInboxToken(token) {
   if (!token) return null;
   let files = [];
   try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return null; }
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
-    if (t && t.inbox && t.inbox.token === token) return t;
+    if (!t) continue;
+    if (t.inbox && t.inbox.token === token) return { t, kind: "inbox" };
+    if (t.senderToken && t.senderToken === token) return { t, kind: "sender" };
   }
   return null;
+}
+
+// Ersten Bestätigungs-/DATEV-Link aus einer Roh-Mail ziehen (für die Absender-Freigabe in
+// DATEV Unternehmen online). Quoted-Printable wird grob aufgelöst, damit lange URLs heil bleiben.
+function extractConfirmLink(rawText) {
+  if (!rawText) return "";
+  const unqp = String(rawText)
+    .replace(/=\r?\n/g, "")
+    .replace(/=3D/gi, "=")
+    .replace(/&amp;/g, "&");
+  const urls = unqp.match(/https?:\/\/[^\s"'<>\)]+/gi) || [];
+  // bevorzugt DATEV-Domains / Bestätigungs-URLs
+  const pick = urls.find((u) => /datev\.de|datev\.com|best[aä]tig|confirm|verify|freigabe|absender/i.test(u))
+    || urls.find((u) => /datev/i.test(u));
+  return (pick || "").slice(0, 1000);
 }
 
 // Anzahl der Benutzer eines Mandanten (für die Sitzplatz-Anzeige).
@@ -551,7 +571,9 @@ const server = http.createServer(async (req, res) => {
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
       if (!RESEND_API_KEY) return send(res, 503, { error: "mail_not_configured" });
       const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
-      const to = (Array.isArray(b.to) ? b.to : [b.to]).map((x) => String(x || "").trim()).filter(Boolean);
+      let to = (Array.isArray(b.to) ? b.to : [b.to]).map((x) => String(x || "").trim()).filter(Boolean);
+      // Einzige Empfänger-Quelle: die zentrale Belege-Config (Steuerberater + DATEV).
+      if (!to.length) to = [t.inbox?.belegEmail, t.inbox?.datevEmail].map((x) => String(x || "").trim()).filter(Boolean);
       const files = (Array.isArray(b.files) ? b.files : [])
         .filter((f) => f && f.filename && f.content)
         .slice(0, 50)
@@ -593,6 +615,9 @@ const server = http.createServer(async (req, res) => {
         // Pro-Mandant eindeutige Absenderadresse – diese (und nur diese) in DATEV als
         // freigegebenen Absender hinterlegen. Verhindert Versand an fremde DATEV-Postfächer.
         senderEmail: tenantSenderAddress(t),
+        // Von DATEV an die Absenderadresse geschickte Absender-Bestätigung (Link zum Freigeben).
+        datevConfirmLink: t.datevConfirm?.link || "",
+        datevConfirmAt: t.datevConfirm?.receivedAt || null,
       });
     }
 
@@ -642,9 +667,26 @@ const server = http.createServer(async (req, res) => {
         .filter((a) => a.filename && a.content).slice(0, 50);
 
       const token = tokenFromAddress(toAddr);
-      const t = await findTenantByInboxToken(token);
+      const found = await findTenantByInboxToken(token);
       // Unbekannte/Test-Adresse: mit 200 quittieren (kein Retry), aber nichts speichern.
-      if (!t) return send(res, 200, { ok: false, ignored: "unknown_inbox" });
+      if (!found) return send(res, 200, { ok: false, ignored: "unknown_inbox" });
+      const t = found.t;
+      const rawBufEarly = Buffer.from(String(rawB64 || ""), "base64");
+      if ((!fromAddr || !subject) && rawBufEarly.length) {
+        try { const pe0 = parseEmail(rawBufEarly.toString("utf8")); fromAddr = fromAddr || pe0.from; subject = subject || pe0.subject; date = date || pe0.date; } catch { /* egal */ }
+      }
+      // Mail an die iou.fm-ABSENDER-Adresse → i. d. R. die DATEV-Absenderbestätigung.
+      // Link kapern, dem Mandanten zur Bestätigung anzeigen; nicht ins Beleg-Archiv, keine Weiterleitung.
+      if (found.kind === "sender") {
+        const link = rawBufEarly.length ? extractConfirmLink(rawBufEarly.toString("utf8")) : "";
+        t.datevConfirm = { link, from: String(fromAddr || "").slice(0, 200), subject: String(subject || "").slice(0, 300), receivedAt: new Date().toISOString() };
+        try {
+          const ddir = path.join(DATA_DIR, "belege", t.tenantId); await fs.mkdir(ddir, { recursive: true });
+          if (rawBufEarly.length) await fs.writeFile(path.join(ddir, "datev_" + newId() + ".eml"), rawBufEarly, { flag: "wx" });
+        } catch { /* egal */ }
+        await writeTenant(t);
+        return send(res, 200, { ok: true, datevConfirm: !!link });
+      }
       const dir = path.join(DATA_DIR, "belege", t.tenantId);
       await fs.mkdir(dir, { recursive: true });
       const beId = newId();

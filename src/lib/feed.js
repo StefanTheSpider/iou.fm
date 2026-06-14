@@ -53,9 +53,12 @@ export async function getBelege(session) {
 
 // Rechnungs-PDFs an Steuerberater/DATEV mailen (Belege).
 export async function sendInvoiceBelege(session, { to, files, subject, text }) {
+  // `to` ist optional: ohne Angabe nutzt der Hub die zentral gepflegten Empfänger (Steuerberater/DATEV).
+  const payload = { files, subject, text };
+  if (Array.isArray(to) && to.length) payload.to = to;
   const r = await fetch(api(`/api/tenants/${session.tenantId}/invoices/send-belege`), {
     method: "POST", headers: { ...auth(session), "Content-Type": "application/json" },
-    body: JSON.stringify({ to, files, subject, text }),
+    body: JSON.stringify(payload),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {

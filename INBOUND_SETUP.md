@@ -33,13 +33,28 @@ Email Routing → **Routing rules** → **Catch-all** → Action **Send to a Wor
 ### 5. Railway-Variablen (Hub)
 ```
 INBOUND_SECRET = <gleiches Geheimnis wie im Worker>
-INBOUND_DOMAIN = DEINE-BELEG-DOMAIN          (z. B. ioufm-belege.de)
-SEND_DOMAIN    = fork-and-merge.com          (Versand bleibt hier, Resend ist verifiziert)
-RESEND_FROM    = iou.fm <belege@fork-and-merge.com>
+INBOUND_DOMAIN = iou-tech.com                (Empfangs-Domain, Cloudflare Email Routing)
+SEND_DOMAIN    = iou-tech.com                (Versand AUCH von hier – siehe DATEV-Hinweis)
+RESEND_FROM    = iou.fm <belege@iou-tech.com>
 ```
 
+## Wichtig: Senden UND Empfangen auf derselben Domain (iou-tech.com)
+Damit die **DATEV-Absenderbestätigung** funktioniert, muss die iou.fm-Absenderadresse auch
+**empfangen** können. Deshalb läuft Versand UND Empfang über **iou-tech.com**:
+- **Empfang:** Cloudflare Email Routing (Catch-all → Worker → Hub) – schon eingerichtet.
+- **Versand:** `iou-tech.com` zusätzlich in **Resend** als Sende-Domain verifizieren
+  (DNS-Einträge bei Cloudflare hinterlegen: SPF/DKIM von Resend; stört die Empfangs-MX nicht,
+  da Resend einen `send`-Subdomain nutzt).
+
+Ablauf der DATEV-Freigabe (automatisch abgefangen):
+1. Kunde trägt in DATEV Unternehmen online unter *Belege → Einstellungen → Upload Mail* die
+   iou.fm-Absenderadresse `belege-<senderToken>@iou-tech.com` als freigegebenen Absender ein.
+2. DATEV schickt eine Bestätigungsmail an diese Adresse → Cloudflare → Worker → Hub.
+3. Der Hub erkennt die Mail an die Absender-Adresse, extrahiert den Bestätigungslink und zeigt
+   ihn in der App (Stammdaten → „Belege & Buchhaltung" → Button „DATEV-Absender jetzt bestätigen").
+
 ## Sicherheit: pro Mandant eigene Absenderadresse
-iou.fm sendet pro Mandant von `belege-<token>@fork-and-merge.com`. Jeder Kunde gibt in DATEV nur
+iou.fm sendet pro Mandant von `belege-<senderToken>@iou-tech.com`. Jeder Kunde gibt in DATEV nur
 seine eigene Adresse als freigegebenen Absender frei → kein Cross-Tenant-Versand möglich.
 
 ## Kosten

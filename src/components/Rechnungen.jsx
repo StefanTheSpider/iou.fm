@@ -122,15 +122,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
   // Geprüfte Rechnungs-PDFs an Steuerberater/DATEV mailen (optional, nach Zahlung).
   async function sendBelege(eligibleRows) {
-    const recips = [opts.belegEmail, opts.datevEmail].map((s) => String(s || "").trim()).filter(Boolean);
-    if (!opts.autoSendBelege || !recips.length || !onSendBelege) return;
+    // Empfänger (Steuerberater/DATEV) sind zentral unter „Belege & Buchhaltung" gepflegt –
+    // der Hub adressiert die Belege automatisch dorthin.
+    if (!opts.autoSendBelege || !onSendBelege) return;
     const files = eligibleRows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
     if (!files.length) { setBelegMsg("Hinweis: Keine PDF-Belege im Speicher – nur frisch geladene PDFs werden mitgeschickt."); return; }
     setBelegMsg("Sende Belege …");
     try {
-      const res = await onSendBelege({ to: recips, files });
-      setBelegMsg(`✓ ${res.sent || files.length} Beleg(e) an ${recips.join(", ")} gesendet.`);
-    } catch (e) { setBelegMsg("Beleg-Versand fehlgeschlagen: " + (e.message || "")); }
+      const res = await onSendBelege({ files });
+      setBelegMsg(`✓ ${res.sent || files.length} Beleg(e) an Steuerberater/DATEV gesendet.`);
+    } catch (e) {
+      const m = e.message || "";
+      setBelegMsg(/Empfänger/i.test(m)
+        ? "Kein Empfänger hinterlegt – trage Steuerberater/DATEV unter Stammdaten → „Belege & Buchhaltung" ein."
+        : "Beleg-Versand fehlgeschlagen: " + m);
+    }
   }
 
   function createSepa(accountId, execDate) {
