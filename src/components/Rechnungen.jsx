@@ -20,6 +20,13 @@ function purposeWithInvoiceNo(purpose, invoiceNumber) {
   return p ? `Rechnung ${inv} – ${p}` : `Rechnung ${inv}`;
 }
 
+// Dublettenschlüssel: dieselbe Rechnung = gleiche Rechnungsnr + IBAN + Betrag (Cent).
+function invoiceKey(invoiceNumber, iban, amountCents) {
+  return `${String(invoiceNumber || "").toLowerCase().trim()}|${String(iban || "").replace(/\s/g, "").toUpperCase()}|${Math.round(amountCents || 0)}`;
+}
+const keyMeaningful = (invoiceNumber, iban) => !!(String(invoiceNumber || "").trim() || String(iban || "").trim());
+const rowKey = (r) => invoiceKey(r.invoiceNumber, r.iban, Math.round(parseFloat(r.amount || 0) * 100));
+
 // ArrayBuffer -> Base64 (chunk-weise, damit auch größere PDFs nicht den Stack sprengen).
 function bufToB64(buf) {
   let bin = ""; const b = new Uint8Array(buf); const chunk = 0x8000;
@@ -73,27 +80,32 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
   async function addFiles(fileList) {
     setError(""); setBusy(true);
+    const ownNames = accounts.flatMap((a) => [a.name, a.label]).filter(Boolean);
+    const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
+    // Bereits vorhandene Rechnungen (Dublettenprüfung), wird im Lauf ergänzt.
+    const seen = new Set((rows || []).map(rowKey).filter((k) => k !== "||0"));
+    let dup = 0;
     try {
       for (const file of Array.from(fileList || [])) {
         if (!/\.pdf$/i.test(file.name)) continue;
         let ex;
-        // Eigene Firma & Konten mitgeben – der Empfänger (z. B. Tix & Travel) darf nicht
-        // als Lieferant erkannt werden.
-        const ownNames = accounts.flatMap((a) => [a.name, a.label]).filter(Boolean);
-        const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
-        const onOcrProgress = (p) => setScan(`🔎 „${file.name}": Texterkennung läuft (gescanntes PDF) … ${Math.round((p || 0) * 100)}%`);
+        const onOcrProgress = (p) => setScan(`🔎 „${file.name}": Texterkennung läuft … ${Math.round((p || 0) * 100)}%`);
         try { ex = await extractInvoice(file, { ownNames, ownIbans, onOcrProgress }); }
-        catch (e) { setScan(""); setError(`„${file.name}": ${e.message}`); continue; }
-        setScan("");
-        // Weiterhin kein auslesbarer Text (auch OCR ohne Ergebnis) → klar melden.
-        if (ex.hasText === false) {
-          setError(`„${file.name}": Kein auslesbarer Text gefunden (Scan/Foto, ggf. zu undeutlich). Bitte Felder manuell ausfüllen.`);
+        catch (e) {
+          // SUPERSAFE: Auslesen gescheitert → trotzdem IMMER eine (leere) Zeile anlegen,
+          // damit jede reingezogene Rechnung verarbeitet werden kann (manuell ausfüllbar).
+          ex = { source: "manuell", fileName: file.name, hasText: false, creditorName: "", iban: "", bic: "", amountCents: 0, invoiceNumber: "", dueDate: "", ibans: [], noIban: true, paidHint: false, _err: e.message };
         }
+        setScan("");
         const iban = ex.iban ? cleanIban(ex.iban) : "";
-        const known = creditors[iban];
-        const meta = iban ? await ibanMeta(iban) : { ibanValid: false, ibanReason: ex.noIban ? "Keine IBAN in der Rechnung gefunden – ggf. extern bezahlt (z. B. PayPal/Karte). Nicht per SEPA zahlbar." : "", bic: "" };
-        const creditorName = (known?.name) || ex.creditorName || "";
         const invoiceNumber = ex.invoiceNumber || "";
+        const key = invoiceKey(invoiceNumber, iban, ex.amountCents);
+        if (keyMeaningful(invoiceNumber, iban) && seen.has(key)) { dup++; continue; } // Dublette → nicht erneut speichern
+        const known = creditors[iban];
+        const meta = iban ? await ibanMeta(iban)
+          : { ibanValid: false, bic: "", ibanReason: ex._err ? "Konnte nicht automatisch ausgelesen werden – bitte Felder manuell ausfüllen."
+              : ex.noIban ? "Keine IBAN gefunden – ggf. extern bezahlt (z. B. PayPal/Karte). Nicht per SEPA zahlbar." : "" };
+        const creditorName = (known?.name) || ex.creditorName || "";
         const row = {
           id: crypto.randomUUID(), fileName: ex.fileName || file.name, source: ex.source || "heuristik",
           creditorName, iban, ibanValid: meta.ibanValid, ibanReason: meta.ibanReason,
@@ -104,22 +116,15 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           skontoPct: "", note: "", status: "offen", selected: true,
           createdBy: userName || "—", createdAt: today(),
         };
-        // PDF-Bytes nur im Speicher halten (für optionalen Beleg-Versand) – nicht im Tresor.
+        if (keyMeaningful(invoiceNumber, iban)) seen.add(key);
         try { const ab = await file.arrayBuffer(); pdfStore.current.set(row.id, { filename: row.fileName, content: bufToB64(ab) }); } catch { /* egal */ }
         // eslint-disable-next-line no-loop-func
         setInvoices((rs) => [row, ...rs]);
-        // Warnungen, stärkste zuerst:
-        // (1) PDF deutet auf bereits erfolgte (externe) Zahlung hin oder hat keine IBAN,
-        // (2) Rechnungsnummer schon in früherem SEPA-Lauf,
-        // (3) gleicher Lieferant + Betrag schon bezahlt.
-        if (ex.paidHint || ex.noIban) {
-          setWarn({ row, reason: "external" });
-        } else if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) {
-          setWarn({ row, reason: "paid" });
-        } else if (ex.amountCents && creditorName && paidPairs.has(`${creditorName.toLowerCase().trim()}|${ex.amountCents}`)) {
-          setWarn({ row, reason: "paidPair" });
-        }
+        if (ex.paidHint || ex.noIban) setWarn({ row, reason: "external" });
+        else if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) setWarn({ row, reason: "paid" });
+        else if (ex.amountCents && creditorName && paidPairs.has(`${creditorName.toLowerCase().trim()}|${ex.amountCents}`)) setWarn({ row, reason: "paidPair" });
       }
+      if (dup) setError(`${dup} bereits vorhandene Rechnung(en) übersprungen (gleiche Nr. + IBAN + Betrag).`);
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
   }
 
@@ -135,7 +140,9 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       const seen = new Set([...(rows || []).map((r) => r.belegId).filter(Boolean), ...((data.invoiceMailSeen) || [])]);
       const ownNames = accounts.flatMap((a) => [a.name, a.label]).filter(Boolean);
       const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
-      const newRows = []; const newSeen = [];
+      // Inhaltliche Dubletten verhindern (gleiche Nr + IBAN + Betrag) – auch bei mehrfacher Weiterleitung.
+      const dupKeys = new Set((rows || []).map(rowKey).filter((k) => k !== "||0"));
+      const newRows = []; const newSeen = []; let dup = 0;
       for (const b of (belege || [])) {
         if (seen.has(b.id)) continue;
         newSeen.push(b.id);
@@ -152,9 +159,12 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           let ex; try { ex = await extractInvoice(wrapper, { ownNames, ownIbans }); } catch { continue; }
           const iban = ex.iban ? cleanIban(ex.iban) : "";
           if (!iban || !validateIban(iban).ok) continue; // ohne zahlbare IBAN keine Rechnung (Tickets etc. raus)
+          const invoiceNumber = ex.invoiceNumber || "";
+          const dKey = invoiceKey(invoiceNumber, iban, ex.amountCents);
+          if (dupKeys.has(dKey)) { dup++; continue; } // schon vorhanden → nicht zweimal anlegen
+          dupKeys.add(dKey);
           const meta = await ibanMeta(iban);
           const creditorName = (creditors[iban]?.name) || ex.creditorName || "";
-          const invoiceNumber = ex.invoiceNumber || "";
           newRows.push({
             id: crypto.randomUUID(), belegId: b.id, fileName: cleanName, source: ex.source || "email",
             creditorName, iban, ibanValid: meta.ibanValid, ibanReason: meta.ibanReason, bic: meta.bic || ex.bic || "",
@@ -173,9 +183,10 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         }), true);
       }
       setScan("");
-      const skipped = newSeen.length - new Set(newRows.map((r) => r.belegId)).size;
       if (newRows.length) {
-        setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${skipped ? ` · ${skipped} ohne zahlbare IBAN übersprungen (z. B. PayPal/Tickets)` : ""} – bitte prüfen, dann auszahlen.`);
+        setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${dup ? ` · ${dup} Dublette(n) übersprungen` : ""} – bitte prüfen, dann auszahlen.`);
+      } else if (dup) {
+        setSaved(`Keine neuen Rechnungen – ${dup} bereits vorhandene Rechnung(en) übersprungen (gleiche Nr. + IBAN + Betrag).`);
       } else if (newSeen.length) {
         setError(`${newSeen.length} neue(r) Beleg(e) eingegangen, aber ohne zahlbare IBAN – z. B. PayPal/Karte oder Tickets ohne Bankverbindung. Solche Belege sind nicht per SEPA zahlbar (liegen aber im Beleg-Archiv).`);
       } else {
