@@ -11,6 +11,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
   const [cfg, setCfg] = useState(null);
   const [belege, setBelege] = useState(null);
   const [detail, setDetail] = useState(null); // { id, files: [{name,size,type}] }
+  const [dlBusy, setDlBusy] = useState("");    // gerade ladende Datei (Name)
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -46,9 +47,12 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     finally { setBusy(""); }
   }
   async function openOne(beId, name) {
-    setErr("");
-    try { await inbox.openFile(beId, name); }
-    catch (e) { setErr(e.message || "Datei konnte nicht geöffnet werden."); }
+    setErr(""); setMsg(""); setDlBusy(name);
+    try {
+      await inbox.openFile(beId, name);
+      setMsg(`✓ Datei in den Ordner „Downloads" geladen – dort per Doppelklick öffnen.`);
+    } catch (e) { setErr(e.message || "Datei konnte nicht geladen werden."); }
+    finally { setDlBusy(""); }
   }
   function fileLabel(name) {
     if (/_beleg\.pdf$/i.test(name)) return "📄 PDF-Beleg herunterladen";
@@ -116,6 +120,11 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
               <input type="email" value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@datev-upload.de" /></label>
           </div>
           <p className="note" style={{ marginTop: 0 }}>Diese Empfänger gelten für beide Funktionen unten. Beide Felder dürfen befüllt sein.</p>
+          {[cfg.belegEmail, cfg.datevEmail].some((x) => x && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x).trim())) && (
+            <p className="note" style={{ background: "rgba(255,107,107,.12)", border: "1px solid rgba(255,107,107,.5)", borderRadius: 8, padding: "10px 12px", color: "#ffb3b3", marginTop: 4 }}>
+              ⚠️ Eine Empfänger-Adresse ist <strong>keine vollständige E-Mail-Adresse</strong> (es fehlt z. B. <code>@…</code>). Die DATEV-Upload-Adresse endet i. d. R. auf <code>@uploadmail.datev.de</code>. Ohne gültige Adresse schlägt der Versand fehl.
+            </p>
+          )}
           {cfg.senderEmail && (
             <p className="note" style={{ background: "rgba(201,162,75,.12)", border: "1px solid rgba(201,162,75,.4)", borderRadius: 8, padding: "10px 12px", color: "#e7c982", marginTop: 4 }}>
               ⚠️ <strong>Wichtig für DATEV:</strong> DATEV nimmt nur Mails von freigegebenen Absendern an.
@@ -173,8 +182,8 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
                             {detail.files.length === 0 && <p className="note">Keine abgelegten Dateien gefunden.</p>}
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                               {detail.files.map((f) => (
-                                <button key={f.name} className="btn small" onClick={() => openOne(b.id, f.name)} title={f.name}>
-                                  {fileLabel(f.name)} <span className="muted" style={{ fontWeight: 400 }}>· {fmtKB(f.size)}</span>
+                                <button key={f.name} className="btn small" disabled={dlBusy === f.name} onClick={() => openOne(b.id, f.name)} title={f.name}>
+                                  {dlBusy === f.name ? "Lädt…" : fileLabel(f.name)} <span className="muted" style={{ fontWeight: 400 }}>· {fmtKB(f.size)}</span>
                                 </button>
                               ))}
                             </div>

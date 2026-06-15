@@ -54,6 +54,11 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     (data.batches || []).filter((b) => b.kind === "rechnung")
       .flatMap((b) => (b.payments || []).map((p) => norm(p.invoiceNumber).toLowerCase()).filter(Boolean))
   );
+  // Fallback-Schlüssel „Lieferant|Betrag" – erkennt Dubletten auch ohne Rechnungsnummer.
+  const paidPairs = new Set(
+    (data.batches || []).filter((b) => b.kind === "rechnung")
+      .flatMap((b) => (b.payments || []).map((p) => (p.name && p.amountCents ? `${String(p.name).toLowerCase().trim()}|${p.amountCents}` : "")).filter(Boolean))
+  );
 
   async function ibanMeta(iban) {
     const v = validateIban(iban);
@@ -100,8 +105,12 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         try { const ab = await file.arrayBuffer(); pdfStore.current.set(row.id, { filename: row.fileName, content: bufToB64(ab) }); } catch { /* egal */ }
         // eslint-disable-next-line no-loop-func
         setInvoices((rs) => [row, ...rs]);
+        // Dubletten-Warnung: zuerst über die Rechnungsnummer, sonst (z. B. wenn die Nr.
+        // fehlt/historisch leer war) über Lieferant + Betrag.
         if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) {
           setWarn({ row, reason: "paid" });
+        } else if (ex.amountCents && creditorName && paidPairs.has(`${creditorName.toLowerCase().trim()}|${ex.amountCents}`)) {
+          setWarn({ row, reason: "paidPair" });
         }
       }
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
@@ -158,7 +167,11 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   async function sendBelege(eligibleRows) {
     // Empfänger (Steuerberater/DATEV) sind zentral unter „Belege & Buchhaltung" gepflegt –
     // der Hub adressiert die Belege automatisch dorthin.
-    if (!opts.autoSendBelege || !onSendBelege) return;
+    if (!onSendBelege) return;
+    if (!opts.autoSendBelege) {
+      setBelegMsg("Hinweis: Auto-Versand an DATEV/Steuerberater ist aus (Stammdaten → Belege & Buchhaltung). Du kannst die Belege oben manuell senden.");
+      return;
+    }
     const files = eligibleRows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
     if (!files.length) { setBelegMsg("Hinweis: Keine PDF-Belege im Speicher – nur frisch geladene PDFs werden mitgeschickt."); return; }
     setBelegMsg("Sende Belege …");
@@ -284,7 +297,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
       {showModal && <SepaModal accounts={accounts} count={eligible.length} sumCents={sumEligible} defaultDate={defaultExecDate()} onClose={() => setShowModal(false)} onCreate={createSepa} />}
       {confirmDel && <ConfirmModal name={(rows.find((x) => x.id === confirmDel)?.creditorName) || "diese Rechnung"} onCancel={() => setConfirmDel(null)} onConfirm={() => removeRow(confirmDel)} />}
-      {warn && <DuplicateModal row={warn.row} onClose={() => setWarn(null)} onRemove={() => { removeRow(warn.row.id); setWarn(null); }} />}
+      {warn && <DuplicateModal row={warn.row} reason={warn.reason} onClose={() => setWarn(null)} onRemove={() => { removeRow(warn.row.id); setWarn(null); }} />}
     </div>
   );
 }
@@ -328,13 +341,15 @@ function ConfirmModal({ name, onCancel, onConfirm }) {
   );
 }
 
-function DuplicateModal({ row, onClose, onRemove }) {
+function DuplicateModal({ row, reason = "paid", onClose, onRemove }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onClose}>
       <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>⚠️</div>
-        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Diese Rechnung wurde schon bezahlt!</h2>
-        <p style={{ fontSize: 15 }}>Rechnungsnummer <strong>{row.invoiceNumber}</strong>{row.creditorName ? <> ({row.creditorName})</> : ""} taucht bereits in einer früheren SEPA-Datei auf. Erneut zahlen = <strong>Doppelzahlung</strong>.</p>
+        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Diese Rechnung wurde wahrscheinlich schon bezahlt!</h2>
+        {reason === "paidPair"
+          ? <p style={{ fontSize: 15 }}>Es gibt bereits eine Zahlung an <strong>{row.creditorName}</strong> über <strong>{row.amount} €</strong> in einer früheren SEPA-Datei (gleicher Lieferant + Betrag, evtl. ohne Rechnungsnummer). Erneut zahlen = <strong>Doppelzahlung</strong>.</p>
+          : <p style={{ fontSize: 15 }}>Rechnungsnummer <strong>{row.invoiceNumber}</strong>{row.creditorName ? <> ({row.creditorName})</> : ""} taucht bereits in einer früheren SEPA-Datei auf. Erneut zahlen = <strong>Doppelzahlung</strong>.</p>}
         <p className="note" style={{ fontSize: 14 }}>Du kannst sie trotzdem in der Liste lassen (z. B. Teilzahlung/Korrektur) oder direkt entfernen.</p>
         <div className="toolbar" style={{ marginBottom: 0, marginTop: 8 }}>
           <button className="btn danger" onClick={onRemove}>Entfernen</button><div className="spacer" />
