@@ -691,6 +691,8 @@ const server = http.createServer(async (req, res) => {
         // Von DATEV an die Absenderadresse geschickte Absender-Bestätigung (Link zum Freigeben).
         datevConfirmLink: t.datevConfirm?.link || "",
         datevConfirmAt: t.datevConfirm?.receivedAt || null,
+        // DATEV-Rückmeldungen (Erfolg/Fehler) zu gesendeten Belegen – neueste zuerst.
+        datevNotices: (t.datevNotices || []).slice(0, 10),
       });
     }
 
@@ -706,6 +708,7 @@ const server = http.createServer(async (req, res) => {
       if (!t.inbox.token) t.inbox.token = newInboxToken();
       // DATEV-Bestätigungshinweis ausblenden (erledigt) – ohne andere Felder zu verändern.
       if (b.clearDatevConfirm) { delete t.datevConfirm; await writeTenant(t); return send(res, 200, { ok: true, cleared: true }); }
+      if (b.clearDatevNotices) { delete t.datevNotices; await writeTenant(t); return send(res, 200, { ok: true, cleared: true }); }
       t.inbox.autoForward = !!b.autoForward;
       t.inbox.datevEmail = String(b.datevEmail || "").trim().slice(0, 200);
       t.inbox.belegEmail = String(b.belegEmail || "").trim().slice(0, 200);
@@ -788,14 +791,30 @@ const server = http.createServer(async (req, res) => {
       // Mail an die iou.fm-ABSENDER-Adresse → i. d. R. die DATEV-Absenderbestätigung.
       // Link kapern, dem Mandanten zur Bestätigung anzeigen; nicht ins Beleg-Archiv, keine Weiterleitung.
       if (found.kind === "sender") {
-        const link = rawBufEarly.length ? extractConfirmLink(rawBufEarly.toString("utf8")) : "";
-        t.datevConfirm = { link, from: String(fromAddr || "").slice(0, 200), subject: String(subject || "").slice(0, 300), receivedAt: new Date().toISOString() };
+        const rawStr = rawBufEarly.length ? rawBufEarly.toString("utf8") : "";
+        const link = rawStr ? extractConfirmLink(rawStr) : "";
+        let bodyText = "";
+        try { bodyText = parseEmail(rawStr).text || ""; } catch { /* egal */ }
+        const subj = String(subject || "").slice(0, 300);
+        const hay = (subj + " " + bodyText).toLowerCase();
+        const isError = /(fehler|konnte nicht|nicht verarbeit|abgelehnt|ungültig|ungueltig|error|fehlgeschlagen|zurückgewiesen|zurueckgewiesen|nicht hochgeladen|abgewiesen)/.test(hay);
+        // Freigabe-Bestätigung (mit Link) → grüner „freigeben"-Hinweis.
+        if (link) t.datevConfirm = { link, from: String(fromAddr || "").slice(0, 200), subject: subj, receivedAt: new Date().toISOString() };
+        // ALLE DATEV-Rückmeldungen sammeln (Erfolg/Fehler) – für die Anzeige in der App.
+        t.datevNotices = t.datevNotices || [];
+        t.datevNotices.unshift({
+          subject: subj, from: String(fromAddr || "").slice(0, 200),
+          receivedAt: new Date().toISOString(),
+          text: bodyText.replace(/\s+/g, " ").trim().slice(0, 500),
+          isError, hasLink: !!link,
+        });
+        t.datevNotices = t.datevNotices.slice(0, 30);
         try {
           const ddir = path.join(DATA_DIR, "belege", t.tenantId); await fs.mkdir(ddir, { recursive: true });
           if (rawBufEarly.length) await fs.writeFile(path.join(ddir, "datev_" + newId() + ".eml"), rawBufEarly, { flag: "wx" });
         } catch { /* egal */ }
         await writeTenant(t);
-        return send(res, 200, { ok: true, datevConfirm: !!link });
+        return send(res, 200, { ok: true, datevConfirm: !!link, notice: true });
       }
       const dir = path.join(DATA_DIR, "belege", t.tenantId);
       await fs.mkdir(dir, { recursive: true });

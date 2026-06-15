@@ -93,7 +93,12 @@ Tab **Rückbuchungen**: offene Chargebacks mit Status/Frist + Kennzahlen (offen/
 
 Du bekommst eine persönliche Weiterleitungs-Adresse (Stammdaten → „Belege per E-Mail"). Leitest du eine Bestellbestätigung oder Einkaufs-Mail dorthin weiter, wird sie **revisionssicher** archiviert (Original unverändert, Zeitstempel, Prüfsumme) und – wenn aktiviert – automatisch an deinen Steuerberater oder direkt an DATEV (Unternehmen online) weitergeleitet. Du trägst nur die Ziel-E-Mail ein.
 
-**Beleg ansehen:** Unter „Belege & Buchhaltung" auf **„Archiv anzeigen"** klicken und bei einem Eintrag auf **„Ansehen"**. Dort öffnest du den erzeugten **PDF-Beleg** oder lädst die **Original-Mail (.eml)** und Anhänge herunter. Die SHA-256-Prüfsumme wird mit angezeigt.
+**Beleg ansehen:** Unter „Belege & Buchhaltung" auf **„Archiv anzeigen"** klicken und bei einem Eintrag auf **„Ansehen"**. Wichtig:
+
+- **📄 PDF = der lesbare Beleg** – das öffnest du zum Anschauen/Buchen (entweder der mitgeschickte Anhang oder der von iou.fm aus dem Mail-Text erzeugte „PDF-Beleg").
+- **✉️ .eml = nur das technische Original** (Roh-Nachweis für die Revisionssicherheit). In der Schnell-Vorschau erscheinen oft nur Absender/Betreff und „kein Inhalt" – das ist normal; mit „Öffnen mit Mail" wird sie normal angezeigt.
+
+Die SHA-256-Prüfsumme wird mit angezeigt.
 
 > Hinweis: Per Mail empfangene Belege liegen serverseitig (anders als der E2E-Tresor) – das ist bei „Mail an eine Adresse" unvermeidbar. Für die steuerliche Anerkennung gehört eine Verfahrensdokumentation dazu (Vorlage liegt bei).
 

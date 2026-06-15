@@ -37,6 +37,13 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     setBusy("archive");
     try { setBelege(await inbox.belege()); } catch { setBelege([]); } finally { setBusy(""); }
   }
+  async function refreshCfg() {
+    setBusy("refresh"); setErr("");
+    try { setCfg(await inbox.get()); } catch (e) { setErr(e.message || "Aktualisieren fehlgeschlagen."); } finally { setBusy(""); }
+  }
+  async function clearNotices() {
+    try { await inbox.clearNotices(); setCfg((c) => ({ ...(c || {}), datevNotices: [] })); } catch (e) { setErr(e.message || "Fehler."); }
+  }
   // Dateien eines Belegs nachladen und aufklappen (Original-.eml, PDF, Anhänge).
   async function toggleFiles(beId) {
     setErr("");
@@ -55,9 +62,9 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     finally { setDlBusy(""); }
   }
   function fileLabel(name) {
-    if (/_beleg\.pdf$/i.test(name)) return "📄 PDF-Beleg herunterladen";
-    if (/\.eml$/i.test(name)) return "✉️ Original-Mail (.eml) herunterladen";
-    if (/\.pdf$/i.test(name)) return "📄 " + name.replace(/^[0-9a-f-]{36}_/i, "");
+    if (/_beleg\.pdf$/i.test(name)) return "📄 PDF-Beleg (lesbar) herunterladen";
+    if (/\.eml$/i.test(name)) return "✉️ Original-Mail (.eml) – nur technischer Nachweis";
+    if (/\.pdf$/i.test(name)) return "📄 " + name.replace(/^[0-9a-f-]{36}_/i, "") + " (lesbar)";
     return "📎 " + name.replace(/^[0-9a-f-]{36}_/i, "");
   }
   const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
@@ -144,6 +151,22 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
             </label>
           )}
 
+          <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>DATEV-Rückmeldungen</h3>
+          <p className="note" style={{ marginTop: 0 }}>Was DATEV zu deinen gesendeten Belegen zurückmeldet (Erfolg/Fehler). So siehst du, ob ein Beleg in DATEV angekommen ist – statt im Stillen zu raten.</p>
+          <div className="toolbar" style={{ marginBottom: 8, marginTop: 0 }}>
+            <button className="btn ghost small" disabled={busy === "refresh"} onClick={refreshCfg}>{busy === "refresh" ? "Lädt…" : "Aktualisieren"}</button>
+            {(cfg.datevNotices || []).length > 0 && <button className="btn ghost small" onClick={clearNotices}>Liste leeren</button>}
+          </div>
+          {(cfg.datevNotices || []).length === 0
+            ? <p className="note" style={{ marginTop: 0 }}>Noch keine Rückmeldung von DATEV. Sende einen Beleg und klick nach ~1–2 Minuten auf „Aktualisieren".</p>
+            : (cfg.datevNotices || []).map((n, i) => (
+                <div key={i} className="note" style={{ marginTop: 0, marginBottom: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid", borderColor: n.isError ? "rgba(255,107,107,.5)" : "rgba(90,217,160,.45)", background: n.isError ? "rgba(255,107,107,.10)" : "rgba(90,217,160,.10)", color: n.isError ? "#ffb3b3" : "#bdf0d6" }}>
+                  <strong>{n.isError ? "⚠️ Fehler" : "✓ OK"}</strong> · {new Date(n.receivedAt).toLocaleString("de-DE")}<br />
+                  <span style={{ color: "var(--text)" }}>{n.subject || "(ohne Betreff)"}</span>
+                  {n.text ? <><br /><span className="muted" style={{ fontSize: 12 }}>{n.text.slice(0, 240)}</span></> : null}
+                </div>
+              ))}
+
           <div className="toolbar" style={{ marginBottom: 0, marginTop: 14 }}>
             <span className="note">Im Archiv: {belege ? belege.length : (cfg.count ?? 0)} Beleg(e).</span>
             <div className="spacer" />
@@ -174,8 +197,9 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
                         <td colSpan={5} style={{ background: "var(--raised-2, rgba(255,255,255,.03))" }}>
                           <div style={{ padding: "6px 2px" }}>
                             <div className="note" style={{ marginBottom: 6 }}>
-                              Revisionssicher abgelegt · Prüfsumme (SHA-256): <code style={{ fontSize: 11 }}>{b.sha256}</code>
+                              <strong>📄 PDF = der lesbare Beleg</strong> (zum Anschauen/Buchen). <strong>✉️ .eml = nur das technische Original</strong> (Roh-Nachweis, zeigt im Schnell-Viewer oft nur die Kopfzeilen – mit „Mail" öffnen für den Inhalt).
                               <br />Klick lädt die Datei in deinen Ordner „Downloads" – dort mit Doppelklick öffnen.
+                              <br />Revisionssicher abgelegt · Prüfsumme (SHA-256): <code style={{ fontSize: 11 }}>{b.sha256}</code>
                             </div>
                             {detail.files.length === 0 && <p className="note">Keine abgelegten Dateien gefunden.</p>}
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>

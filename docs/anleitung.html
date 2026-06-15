@@ -163,7 +163,12 @@
 
   <h2>7b · Belege per E-Mail (Bestellbestätigungen & Einkäufe)</h2>
   <p>Du erhältst in den Stammdaten eine persönliche <strong>Weiterleitungs-Adresse</strong>. Leite Bestellbestätigungen oder Einkaufs-Belege per E-Mail dorthin weiter – sie werden <strong>revisionssicher</strong> archiviert (Original unverändert, Zeitstempel, Prüfsumme) und, wenn aktiviert, automatisch an deinen Steuerberater oder direkt an DATEV (Unternehmen online) weitergeleitet. Du trägst nur die Ziel-E-Mail ein.</p>
-  <p><strong>Beleg ansehen:</strong> Unter „Belege &amp; Buchhaltung" auf <strong>„Archiv anzeigen"</strong> und beim Eintrag auf <strong>„Ansehen"</strong> klicken. Dort öffnest du den erzeugten <strong>PDF-Beleg</strong> oder lädst die <strong>Original-Mail (.eml)</strong> samt Anhängen herunter; die SHA-256-Prüfsumme wird angezeigt.</p>
+  <p><strong>Beleg ansehen:</strong> Unter „Belege &amp; Buchhaltung" auf <strong>„Archiv anzeigen"</strong> und beim Eintrag auf <strong>„Ansehen"</strong> klicken. Wichtig zum Verständnis:</p>
+  <ul>
+    <li><strong>📄 PDF = der lesbare Beleg</strong> – zum Anschauen/Buchen (entweder der mitgeschickte Anhang oder der von iou.fm aus dem Mail-Text erzeugte „PDF-Beleg").</li>
+    <li><strong>✉️ .eml = nur das technische Original</strong> (Roh-Nachweis für die Revisionssicherheit). In der Schnell-Vorschau erscheinen oft nur Absender/Betreff und „kein Inhalt" – das ist normal; mit <em>„Öffnen mit Mail"</em> wird sie korrekt angezeigt.</li>
+  </ul>
+  <p class="note">Die SHA-256-Prüfsumme wird je Beleg angezeigt.</p>
   <blockquote>Per Mail empfangene Belege liegen serverseitig (anders als der Ende-zu-Ende-verschlüsselte Tresor) – das ist bei „Mail an eine Adresse" technisch unvermeidbar. Für die steuerliche Anerkennung gehört eine Verfahrensdokumentation dazu (Vorlage liegt bei).</blockquote>
 
   <h2 id="buchhalter">8 · Export für den Steuerberater</h2>

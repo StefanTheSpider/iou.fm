@@ -325,6 +325,7 @@ export default function App() {
     get: () => getInbox(sessionRef.current),
     save: (cfg) => saveInbox(sessionRef.current, cfg),
     clearConfirm: () => saveInbox(sessionRef.current, { clearDatevConfirm: true }),
+    clearNotices: () => saveInbox(sessionRef.current, { clearDatevNotices: true }),
     belege: () => getBelege(sessionRef.current),
     files: (beId) => getBelegFiles(sessionRef.current, beId),
     openFile: (beId, name) => openBelegFile(sessionRef.current, beId, name),

@@ -180,7 +180,8 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     setBelegMsg("Sende an DATEV/Steuerberater (nicht zur Zahlung) …");
     try {
       const res = await onSendBelege({ files: [f], subject: `Beleg (bereits bezahlt): ${row.invoiceNumber || row.creditorName || row.fileName || ""}` });
-      setBelegMsg(`✓ ${res?.sent || 1} Beleg an DATEV/Steuerberater gesendet – nicht zur Zahlung hinzugefügt.`);
+      const toTxt = (res?.to || []).join(", ");
+      setBelegMsg(`✓ Beleg an Mailsystem übergeben${toTxt ? ` → ${toTxt}` : ""} – nicht zur Zahlung hinzugefügt. (Erscheint nur in DATEV, wenn der Absender dort freigegeben ist.)`);
     } catch (e) {
       const m = e.message || "";
       setBelegMsg(/Empfänger|recipient/i.test(m)
