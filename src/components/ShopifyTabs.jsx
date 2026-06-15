@@ -133,9 +133,12 @@ function combinedRows(feed) {
 export function Stornos({ feed, canPay, onRefresh, busy }) {
   const [art, setArt] = useState("alle");
   const [cat, setCat] = useState("alle");
+  const [q, setQ] = useState("");
   const combined = combinedRows(feed);
+  const ql = q.trim().toLowerCase();
   const all = combined
-    .filter((r) => (art === "alle" || r.art === art) && (cat === "alle" || r.category === cat))
+    .filter((r) => (art === "alle" || r.art === art) && (cat === "alle" || r.category === cat) &&
+      (!ql || `${r.orderNumber || ""} ${r.customer || ""}`.toLowerCase().includes(ql)))
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const sum = all.reduce((s, r) => s + (r.amountCents || 0), 0);
 
@@ -181,6 +184,7 @@ export function Stornos({ feed, canPay, onRefresh, busy }) {
             <option value="alle">alle</option>{CATS.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Suche: Bestellnummer oder Name" style={{ minWidth: 240 }} />
         <span className="muted">{all.length} Einträge</span>
         <div className="spacer" />
         {onRefresh && <button className="btn ghost small" onClick={onRefresh} disabled={busy}>{busy ? "Lädt…" : "Aktualisieren"}</button>}

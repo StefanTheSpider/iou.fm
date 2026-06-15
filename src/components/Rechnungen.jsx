@@ -76,7 +76,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         let ex;
         // Eigene Firma & Konten mitgeben – der Empfänger (z. B. Tix & Travel) darf nicht
         // als Lieferant erkannt werden.
-        const ownNames = accounts.map((a) => a.name).filter(Boolean);
+        const ownNames = accounts.flatMap((a) => [a.name, a.label]).filter(Boolean);
         const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
         const onOcrProgress = (p) => setScan(`🔎 „${file.name}": Texterkennung läuft (gescanntes PDF) … ${Math.round((p || 0) * 100)}%`);
         try { ex = await extractInvoice(file, { ownNames, ownIbans, onOcrProgress }); }
@@ -88,7 +88,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         }
         const iban = ex.iban ? cleanIban(ex.iban) : "";
         const known = creditors[iban];
-        const meta = iban ? await ibanMeta(iban) : { ibanValid: false, ibanReason: "", bic: "" };
+        const meta = iban ? await ibanMeta(iban) : { ibanValid: false, ibanReason: ex.noIban ? "Keine IBAN in der Rechnung gefunden – ggf. extern bezahlt (z. B. PayPal/Karte). Nicht per SEPA zahlbar." : "", bic: "" };
         const creditorName = (known?.name) || ex.creditorName || "";
         const invoiceNumber = ex.invoiceNumber || "";
         const row = {
@@ -105,9 +105,13 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         try { const ab = await file.arrayBuffer(); pdfStore.current.set(row.id, { filename: row.fileName, content: bufToB64(ab) }); } catch { /* egal */ }
         // eslint-disable-next-line no-loop-func
         setInvoices((rs) => [row, ...rs]);
-        // Dubletten-Warnung: zuerst über die Rechnungsnummer, sonst (z. B. wenn die Nr.
-        // fehlt/historisch leer war) über Lieferant + Betrag.
-        if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) {
+        // Warnungen, stärkste zuerst:
+        // (1) PDF deutet auf bereits erfolgte (externe) Zahlung hin oder hat keine IBAN,
+        // (2) Rechnungsnummer schon in früherem SEPA-Lauf,
+        // (3) gleicher Lieferant + Betrag schon bezahlt.
+        if (ex.paidHint || ex.noIban) {
+          setWarn({ row, reason: "external" });
+        } else if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) {
           setWarn({ row, reason: "paid" });
         } else if (ex.amountCents && creditorName && paidPairs.has(`${creditorName.toLowerCase().trim()}|${ex.amountCents}`)) {
           setWarn({ row, reason: "paidPair" });
@@ -346,8 +350,10 @@ function DuplicateModal({ row, reason = "paid", onClose, onRemove }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onClose}>
       <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>⚠️</div>
-        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Diese Rechnung wurde wahrscheinlich schon bezahlt!</h2>
-        {reason === "paidPair"
+        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>{reason === "external" ? "Achtung – bitte prüfen!" : "Diese Rechnung wurde wahrscheinlich schon bezahlt!"}</h2>
+        {reason === "external"
+          ? <p style={{ fontSize: 15 }}>Diese Rechnung enthält <strong>keine IBAN</strong> bzw. deutet auf eine <strong>bereits erfolgte Zahlung</strong> hin (z. B. PayPal/Karte). iou.fm kennt nur Zahlungen, die <strong>über iou.fm</strong> liefen – externe Zahlungen kann es nicht erkennen. Bitte prüfen, bevor du sie in die SEPA-Datei nimmst.</p>
+          : reason === "paidPair"
           ? <p style={{ fontSize: 15 }}>Es gibt bereits eine Zahlung an <strong>{row.creditorName}</strong> über <strong>{row.amount} €</strong> in einer früheren SEPA-Datei (gleicher Lieferant + Betrag, evtl. ohne Rechnungsnummer). Erneut zahlen = <strong>Doppelzahlung</strong>.</p>
           : <p style={{ fontSize: 15 }}>Rechnungsnummer <strong>{row.invoiceNumber}</strong>{row.creditorName ? <> ({row.creditorName})</> : ""} taucht bereits in einer früheren SEPA-Datei auf. Erneut zahlen = <strong>Doppelzahlung</strong>.</p>}
         <p className="note" style={{ fontSize: 14 }}>Du kannst sie trotzdem in der Liste lassen (z. B. Teilzahlung/Korrektur) oder direkt entfernen.</p>

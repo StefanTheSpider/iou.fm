@@ -61,6 +61,8 @@ So entsteht ein **Vier-Augen-Prinzip**: Mitarbeiter bereiten vor, nur ein Admin 
 5. Grund im Kommentar festhalten.
 6. Auswählen → als Admin SEPA-Datei erstellen.
 
+Tipp: Über das **Suchfeld** (Bestellnummer oder Name) findest du einen Eintrag schnell. Auch im Tab **Stornos** gibt es diese Suche.
+
 > Schutz vor Doppelzahlung: bereits erstattete/stornierte oder doppelte Bestellungen lösen eine Warnung aus.
 
 ## 5 · Lieferantenrechnungen zahlen

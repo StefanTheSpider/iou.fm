@@ -67,6 +67,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [error, setError] = useState("");
   const [fMethod, setFMethod] = useState("alle");
   const [fStatus, setFStatus] = useState("offen");
+  const [q, setQ] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [saved, setSaved] = useState("");
   const [lastSepa, setLastSepa] = useState(null); // { xml, filename } – für optionalen EBICS-Versand
@@ -133,9 +134,11 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const eligible = computed.filter((c) => c.sepaEligible && c.r.selected !== false);
   const sumEligible = eligible.reduce((s, c) => s + c.refund.refundCents, 0);
 
+  const ql = q.trim().toLowerCase();
   const visible = computed.filter(({ r }) =>
     (fMethod === "alle" || r.method === fMethod) &&
-    (fStatus === "alle" || r.status === fStatus)
+    (fStatus === "alle" || r.status === fStatus) &&
+    (!ql || `${r.orderNumber || ""} ${r.customerName || ""}`.toLowerCase().includes(ql))
   );
 
   // Nicht-SEPA als erstattet/storniert markieren (Buchhaltungs-Nachweis).
@@ -269,6 +272,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
             <option value="alle">alle</option>
           </select>
         </label>
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Suche: Bestellnummer oder Name" style={{ minWidth: 240 }} />
         <span className="muted">{visible.length} Einträge</span>
       </div>
 

@@ -72,9 +72,20 @@ async function findEInvoiceXml(pdf) {
 // Öffentlich: eine Rechnungs-Datei -> bestmögliche Zahlungsdaten.
 // opts.ownNames / opts.ownIbans = eigene Firma & Konten (Empfänger), die NICHT als
 // Lieferant erkannt werden dürfen.
+// PDF öffnen – mit einem Wiederholversuch, falls der pdf.js-Worker beim allerersten
+// Aufruf noch nicht bereit ist (sonst „klappt erst beim 2. Mal"). Buffer je Versuch neu
+// lesen, da getDocument den ArrayBuffer übernimmt.
+async function openPdf(file) {
+  try {
+    return await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false, useSystemFonts: false }).promise;
+  } catch (e) {
+    await new Promise((r) => setTimeout(r, 200));
+    return await pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false, useSystemFonts: false }).promise;
+  }
+}
+
 export async function extractInvoice(file, opts = {}) {
-  const data = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data, isEvalSupported: false, useSystemFonts: false }).promise;
+  const pdf = await openPdf(file);
   const e = await findEInvoiceXml(pdf);
   if (e) return { ...e, fileName: file.name };
   let lines = await pdfText(pdf);

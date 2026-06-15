@@ -54,7 +54,7 @@ export function amountToCents(s) {
 // Schlüsselwörter mit Priorität (höher = wichtiger) für den Zahlbetrag.
 const TOTAL_KEYS = [
   { re: /zu\s*zahlen|zahlbetrag|zahlungsbetrag/i, w: 100 },
-  { re: /gesamtbetrag|rechnungsbetrag|endbetrag|gesamtsumme/i, w: 90 },
+  { re: /endsumme|endbetrag|gesamtbetrag|rechnungsbetrag|gesamtsumme/i, w: 90 },
   { re: /\bbrutto\b|gesamt\b|\btotal\b|\bsumme\b/i, w: 70 },
 ];
 export function findAmountCents(lines) {
@@ -76,7 +76,7 @@ export function findAmountCents(lines) {
 // --- Rechnungsnummer --------------------------------------------------------
 export function findInvoiceNumber(text) {
   const t = String(text || "");
-  const re = /(?:rechnung(?:s)?[\s-]*(?:nr|nummer)\.?|invoice\s*(?:no|number)\.?|beleg(?:nr|nummer)\.?|r[ge]\.?[\s-]*nr\.?)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/\-.]{2,30})/i;
+  const re = /(?:rechnung(?:s)?[\s-]*(?:nr|nummer)\.?|invoice\s*(?:no|number)\.?|beleg(?:nr|nummer)\.?|r[ge]\.?[\s-]*(?:nr|nummer)\.?)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/\-.]{2,30})/i;
   const m = t.match(re);
   return m ? m[1].replace(/[.\-/]+$/, "") : "";
 }
@@ -150,9 +150,17 @@ export function guessCreditor(text, ownNames = []) {
     }
   }
 
-  // 5) Fallback: erste Zeile, die nicht die eigene Firma/Adresse ist.
-  const first = lines.find((l) => !isOwnName(l, own) && !/^\d/.test(l));
-  return (first || lines[0] || "").slice(0, 70);
+  // 5) Fallback: erste „namensartige" Zeile – KEINE Feld-Beschriftung, keine
+  //    buchstabengesperrte Zeile („n n o o t t e e …"), nicht die eigene Firma.
+  //    Findet sich nichts Sinnvolles, lieber LEER lassen (Nutzer füllt manuell).
+  const LABEL_RE = /(rechnung|nummer|\bnr\b|datum|kunden|bearbeiter|seite|betrag|summe|telefon|\bfax\b|e-?mail|ust|umsatzsteuer|iban|bic|artikel|bezeichnung|menge|mwst|versand|zahlung|bestellung|original|stra(ß|ss)e|str\.|\bweg\b|allee|platz|gasse|\bring\b|deutschland|österreich|schweiz|germany|austria)/i;
+  const looksSpaced = (l) => { const t = l.split(/\s+/).filter(Boolean); return t.length >= 6 && t.filter((x) => x.length === 1).length / t.length > 0.5; };
+  // Nur Zeilen mit ≥2 echten Wort-Tokens (reine Buchstaben, kein Code/Datum, keine Stoppwörter).
+  const STOP = /^(vom|von|der|die|das|und|für|den|dem|am|im|zum|zur|inkl|netto|brutto)$/i;
+  const wordCount = (l) => l.split(/\s+/).filter((t) => /^[A-Za-zÄÖÜäöüß.&-]{3,}$/.test(t) && !STOP.test(t)).length;
+  const first = lines.slice(0, 8).find((l) =>
+    !isOwnName(l, own) && !/^\d/.test(l) && !LABEL_RE.test(l) && !looksSpaced(l) && wordCount(l) >= 2);
+  return (first || "").slice(0, 70);
 }
 
 // Gesamt-Parser: nimmt entweder rohen Text oder Zeilen-Array.
@@ -166,9 +174,14 @@ export function parseInvoice(input, opts = {}) {
   const allIbans = findIbans(num);
   // Eigene Konten als Kreditor-IBAN ausschließen – Geld geht an den LIEFERANTEN.
   const ibans = allIbans.filter((i) => !ownIbans.includes(i));
+  // Hinweis, dass die Rechnung evtl. schon (extern) bezahlt ist – iou.fm kennt nur
+  // Zahlungen, die DURCH iou.fm liefen; externe (PayPal/Karte/…) kann es nicht wissen.
+  const paidHint = /zahlungs(art|form|weise)\s*:?\s*(paypal|kreditkarte|kreditk\.|lastschrift|sofort\b|klarna|amazon|vorkasse|giropay|apple\s*pay|google\s*pay)|bereits\s+(bezahlt|beglichen|gezahlt)|bezahlt\s+am|status\s*:?\s*bezahlt|\bbezahlt\b|\bpaid\b/i.test(num) || /\bpaypal\b/i.test(num);
   return {
     iban: (ibans[0] || allIbans[0] || ""),
     ibans: ibans.length ? ibans : allIbans,
+    noIban: allIbans.length === 0,
+    paidHint: paidHint,
     bic: findBic(num),
     amountCents: findAmountCents(num),
     invoiceNumber: findInvoiceNumber(num),
