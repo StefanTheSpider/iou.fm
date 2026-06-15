@@ -77,7 +77,16 @@ export async function extractInvoice(file, opts = {}) {
   const pdf = await pdfjs.getDocument({ data, isEvalSupported: false, useSystemFonts: false }).promise;
   const e = await findEInvoiceXml(pdf);
   if (e) return { ...e, fileName: file.name };
-  const lines = await pdfText(pdf);
-  const hasText = lines.join("").replace(/\s/g, "").length > 0;
-  return { source: "heuristik", fileName: file.name, hasText, ...parseInvoice(lines, opts) };
+  let lines = await pdfText(pdf);
+  let hasText = lines.join("").replace(/\s/g, "").length > 0;
+  let source = "heuristik";
+  // Kein Text in der PDF (Scan/Foto) → lokale OCR versuchen (Tesseract, im Gerät).
+  if (!hasText) {
+    try {
+      const { ocrPdf } = await import("./ocr.js");
+      const ocrLines = await ocrPdf(pdf, { onProgress: opts.onOcrProgress });
+      if (ocrLines.join("").replace(/\s/g, "").length > 0) { lines = ocrLines; hasText = true; source = "ocr"; }
+    } catch { /* OCR nicht verfügbar/fehlgeschlagen → leere Felder, Nutzer füllt manuell */ }
+  }
+  return { source, fileName: file.name, hasText, ...parseInvoice(lines, opts) };
 }

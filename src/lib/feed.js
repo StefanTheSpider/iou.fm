@@ -55,25 +55,18 @@ export async function getBelegFiles(session, beId) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/belege/${beId}/files`), { headers: auth(session) });
   return r.ok ? (await r.json()).files || [] : [];
 }
-// Eine Beleg-Datei laden und im System-Viewer öffnen (PDF/Bild) bzw. herunterladen (.eml).
+// Eine Beleg-Datei laden und herunterladen. (Das Tauri-Fenster blockiert window.open
+// für Blob-URLs, deshalb laden wir die Datei zuverlässig in „Downloads" – dort öffnet
+// man PDF/.eml mit dem System-Viewer. Gleiches Muster wie der SEPA-Datei-Download.)
 export async function openBelegFile(session, beId, name) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/belege/${beId}/file/${encodeURIComponent(name)}`), { headers: auth(session) });
   if (!r.ok) throw new Error(`Datei konnte nicht geladen werden (${r.status}).`);
   const blob = await r.blob();
   const objUrl = URL.createObjectURL(blob);
-  const viewable = /\.(pdf|png|jpe?g|gif|tiff?)$/i.test(name);
-  if (viewable) {
-    const w = window.open(objUrl, "_blank", "noopener");
-    if (!w) triggerDownload(objUrl, name); // Popup blockiert → herunterladen
-  } else {
-    triggerDownload(objUrl, name); // .eml u. Ä. immer herunterladen
-  }
-  setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
-}
-function triggerDownload(url, filename) {
   const a = document.createElement("a");
-  a.href = url; a.download = filename;
+  a.href = objUrl; a.download = name; a.rel = "noopener";
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
 }
 
 // Rechnungs-PDFs an Steuerberater/DATEV mailen (Belege).

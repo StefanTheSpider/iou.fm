@@ -39,6 +39,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [belegMsg, setBelegMsg] = useState("");
+  const [scan, setScan] = useState("");             // OCR-Fortschritt (gescannte PDFs)
   const [showModal, setShowModal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const [warn, setWarn] = useState(null);           // Doppelzahlungs-Warnung
@@ -72,11 +73,13 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         // als Lieferant erkannt werden.
         const ownNames = accounts.map((a) => a.name).filter(Boolean);
         const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
-        try { ex = await extractInvoice(file, { ownNames, ownIbans }); }
-        catch (e) { setError(`„${file.name}": ${e.message}`); continue; }
-        // Reiner Scan ohne Textebene → nichts auslesbar. Klar melden statt leerer Zeile.
-        if (ex.source === "heuristik" && ex.hasText === false) {
-          setError(`„${file.name}": Diese PDF enthält keinen auslesbaren Text (vermutlich ein Scan/Foto). Bitte Felder manuell ausfüllen.`);
+        const onOcrProgress = (p) => setScan(`🔎 „${file.name}": Texterkennung läuft (gescanntes PDF) … ${Math.round((p || 0) * 100)}%`);
+        try { ex = await extractInvoice(file, { ownNames, ownIbans, onOcrProgress }); }
+        catch (e) { setScan(""); setError(`„${file.name}": ${e.message}`); continue; }
+        setScan("");
+        // Weiterhin kein auslesbarer Text (auch OCR ohne Ergebnis) → klar melden.
+        if (ex.hasText === false) {
+          setError(`„${file.name}": Kein auslesbarer Text gefunden (Scan/Foto, ggf. zu undeutlich). Bitte Felder manuell ausfüllen.`);
         }
         const iban = ex.iban ? cleanIban(ex.iban) : "";
         const known = creditors[iban];
@@ -218,6 +221,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           {onSendBelege && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater/DATEV senden">An DATEV/Steuerberater senden</button>}
           <span className="note">Mehrere PDFs auf einmal möglich. Bekannte Lieferanten werden automatisch erkannt.</span>
         </div>
+        {scan && <p className="note" style={{ color: "var(--secondary, #5b8cff)" }}>{scan}</p>}
         {error && <p className="error-text">{error}</p>}
         {saved && <p className="note" style={{ color: "var(--ok, #3ddc97)" }}>{saved}</p>}
         {belegMsg && <p className="note" style={{ color: belegMsg.startsWith("✓") ? "var(--ok, #3ddc97)" : "var(--muted)" }}>{belegMsg}</p>}

@@ -5,6 +5,17 @@ import { cleanIban, validateIban } from "./iban.js";
 
 const lc = (s) => String(s || "").toLowerCase();
 
+// Viele PDFs liefern Text glyph-weise mit eingestreuten Leerzeichen, z. B.
+// "6.545 , - Euro" oder "0 8 /20 2 6". Diese Leerzeichen INNERHALB von Zahlen
+// reparieren wir – nur zwischen Ziffern und ., / - (zeilenweise, ohne Zeilenumbrüche
+// zu überspringen), damit Beträge und Rechnungsnummern zuverlässig erkannt werden.
+export function normalizeSpacedNumbers(text) {
+  return String(text || "")
+    .replace(/(\d)[ \t]+(?=\d)/g, "$1")                  // "0 8" -> "08", "20 2 6" -> "2026"
+    .replace(/(\d)[ \t]*([.,/])[ \t]*(?=[\d\-–—])/g, "$1$2") // "6.545 ," -> "6.545,", "1 .045" -> "1.045"
+    .replace(/([.,])[ \t]*([-–—])/g, "$1$2");            // ", -" -> ",-"
+}
+
 // --- IBAN -------------------------------------------------------------------
 export function findIbans(text) {
   const t = String(text || "").toUpperCase();
@@ -148,17 +159,20 @@ export function guessCreditor(text, ownNames = []) {
 // opts.ownNames / opts.ownIbans = eigene Firma & Konten (Empfänger), die ausgeschlossen werden.
 export function parseInvoice(input, opts = {}) {
   const text = Array.isArray(input) ? input.join("\n") : String(input || "");
+  // Zahlen-reparierte Variante für Beträge, Rechnungsnummer und IBAN (die echte
+  // PDF-Textextraktion streut Leerzeichen ein). Namen bleiben auf dem Originaltext.
+  const num = normalizeSpacedNumbers(text);
   const ownIbans = (opts.ownIbans || []).map((s) => String(s || "").replace(/\s/g, "").toUpperCase());
-  const allIbans = findIbans(text);
+  const allIbans = findIbans(num);
   // Eigene Konten als Kreditor-IBAN ausschließen – Geld geht an den LIEFERANTEN.
   const ibans = allIbans.filter((i) => !ownIbans.includes(i));
   return {
     iban: (ibans[0] || allIbans[0] || ""),
     ibans: ibans.length ? ibans : allIbans,
-    bic: findBic(text),
-    amountCents: findAmountCents(text),
-    invoiceNumber: findInvoiceNumber(text),
-    dueDate: findDueDate(text),
+    bic: findBic(num),
+    amountCents: findAmountCents(num),
+    invoiceNumber: findInvoiceNumber(num),
+    dueDate: findDueDate(num),
     creditorName: guessCreditor(text, opts.ownNames || []),
   };
 }

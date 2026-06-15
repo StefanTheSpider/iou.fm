@@ -51,7 +51,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     catch (e) { setErr(e.message || "Datei konnte nicht geöffnet werden."); }
   }
   function fileLabel(name) {
-    if (/_beleg\.pdf$/i.test(name)) return "📄 PDF-Beleg ansehen";
+    if (/_beleg\.pdf$/i.test(name)) return "📄 PDF-Beleg herunterladen";
     if (/\.eml$/i.test(name)) return "✉️ Original-Mail (.eml) herunterladen";
     if (/\.pdf$/i.test(name)) return "📄 " + name.replace(/^[0-9a-f-]{36}_/i, "");
     return "📎 " + name.replace(/^[0-9a-f-]{36}_/i, "");
@@ -168,6 +168,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
                           <div style={{ padding: "6px 2px" }}>
                             <div className="note" style={{ marginBottom: 6 }}>
                               Revisionssicher abgelegt · Prüfsumme (SHA-256): <code style={{ fontSize: 11 }}>{b.sha256}</code>
+                              <br />Klick lädt die Datei in deinen Ordner „Downloads" – dort mit Doppelklick öffnen.
                             </div>
                             {detail.files.length === 0 && <p className="note">Keine abgelegten Dateien gefunden.</p>}
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
