@@ -12,7 +12,7 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege } from "./lib/feed.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege, getBelegFiles, openBelegFile } from "./lib/feed.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics, getOwnerCustomers } from "./lib/billing.js";
 
@@ -116,7 +116,23 @@ export default function App() {
     return { ...BRANDING, ...b, theme: { ...BRANDING.theme, ...(b.theme || {}) } };
   }, [session]);
 
-  useEffect(() => { applyTheme(branding.theme); }, [branding.theme]);
+  // Hell/Dunkel ist eine PERSÖNLICHE Einstellung pro Gerät/Nutzer (localStorage),
+  // NICHT Teil der synchronisierten Tenant-Daten. So ändert die Wahl eines Nutzers
+  // nicht die Darstellung aller anderen. Logo/Farben bleiben White-Label (geteilt).
+  const [userMode, setUserMode] = useState(() => {
+    try { return localStorage.getItem("iou.themeMode") || ""; } catch { return ""; }
+  });
+  const setThemeMode = useCallback((m) => {
+    try { if (m) localStorage.setItem("iou.themeMode", m); else localStorage.removeItem("iou.themeMode"); } catch { /* ignore */ }
+    setUserMode(m || "");
+  }, []);
+  // Persönlicher Modus gewinnt; sonst der White-Label-Vorgabemodus des Tenants.
+  const effectiveTheme = useMemo(
+    () => ({ ...branding.theme, mode: userMode || branding.theme.mode }),
+    [branding.theme, userMode]
+  );
+
+  useEffect(() => { applyTheme(effectiveTheme); }, [effectiveTheme]);
   useEffect(() => { document.title = branding.productName; }, [branding.productName]);
 
   // Vor Verlassen warnen, wenn ungespeichert.
@@ -310,6 +326,8 @@ export default function App() {
     save: (cfg) => saveInbox(sessionRef.current, cfg),
     clearConfirm: () => saveInbox(sessionRef.current, { clearDatevConfirm: true }),
     belege: () => getBelege(sessionRef.current),
+    files: (beId) => getBelegFiles(sessionRef.current, beId),
+    openFile: (beId, name) => openBelegFile(sessionRef.current, beId, name),
   }), []);
 
   // Abo/Lizenz-Aktionen für die Stammdaten-Oberfläche.
@@ -405,6 +423,9 @@ export default function App() {
         <div className="spacer" />
         {saved && <span className="save-indicator show">✓ Gespeichert</span>}
         {dirty && <button className="btn small" onClick={commit}>Änderungen speichern</button>}
+        <button className="lock-btn" onClick={() => setThemeMode(effectiveTheme.mode === "light" ? "dark" : "light")} title="Hell/Dunkel umschalten (nur für dich, auf diesem Gerät)" aria-label="Darstellung umschalten">
+          {effectiveTheme.mode === "light" ? "🌙 Dunkel" : "☀️ Hell"}
+        </button>
         <button className="lock-btn" onClick={openHelp} title="Bedienungsanleitung öffnen" aria-label="Bedienungsanleitung">📖 Anleitung</button>
         <span className="user-chip">{session.currentUser.username}{session.currentUser.role === "admin" ? " · Admin" : ""}</span>
         <button className="lock-btn" onClick={lock}>🔒 Abmelden</button>
@@ -471,6 +492,7 @@ export default function App() {
             {tab === "stammdaten" && isAdmin && (
               <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify} accountant={accountant}
                 billing={billing} license={license} ebicsAllowed={ebicsAllowed} tenantId={session.tenantId} inbox={inbox}
+                themeMode={effectiveTheme.mode} onThemeMode={setThemeMode}
                 auth={{ currentUser: session.currentUser, users: session.users, addUser, removeUser }} />
             )}
             {tab === "support" && isOwner && <VendorSupport onOpenSession={enterSupport} />}

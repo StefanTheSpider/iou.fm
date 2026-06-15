@@ -35,7 +35,7 @@ function useIbanField() {
   return { value, setValue, info, setInfo, check };
 }
 
-export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant, billing, license, ebicsAllowed = false, tenantId = "", inbox = null }) {
+export default function Stammdaten({ data, updateData, auth, sync, shopify, accountant, billing, license, ebicsAllowed = false, tenantId = "", inbox = null, themeMode = "dark", onThemeMode = null }) {
   const isAdmin = auth?.currentUser?.role === "admin";
   return (
     <div>
@@ -54,7 +54,7 @@ export default function Stammdaten({ data, updateData, auth, sync, shopify, acco
       {isAdmin && inbox && <BelegePostfach inbox={inbox} data={data} updateData={updateData} rechnungOn={!!data.config?.modules?.rechnungZahlung} onOpen={openExternal} />}
       {isAdmin && <EbicsSettings data={data} updateData={updateData} allowed={ebicsAllowed} />}
       {isAdmin && accountant && <AccountantSettings accountant={accountant} />}
-      <Branding data={data} updateData={updateData} />
+      <Branding data={data} updateData={updateData} themeMode={themeMode} onThemeMode={onThemeMode} />
     </div>
   );
 }
@@ -544,7 +544,7 @@ function ColorField({ label, value, onChange, allowEmpty }) {
   );
 }
 
-function Branding({ data, updateData }) {
+function Branding({ data, updateData, themeMode = "dark", onThemeMode = null }) {
   const b = data.branding || {};
   const t = b.theme || {};
   const set = (patch) => updateData((d) => ({ ...d, branding: { ...(d.branding || {}), ...patch } }));
@@ -555,7 +555,7 @@ function Branding({ data, updateData }) {
   return (
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Darstellung (White-Label)</h2>
-      <p className="note">Name, Logo und Farben anpassen – wirkt sofort, verschlüsselt im Tresor gespeichert. Farben als HEX (#3ddc97) oder RGB (rgb(61,220,151)). Der Urheber-Hinweis „fork and merge UG" bleibt erhalten.</p>
+      <p className="note">Name, Logo und Farben anpassen – wirkt sofort, verschlüsselt im Tresor gespeichert. Farben als HEX (#3ddc97) oder RGB (rgb(61,220,151)). Der Urheber-Hinweis „fork and merge UG" bleibt erhalten. Name, Logo und Farben gelten für alle Nutzer (White-Label); Hell/Dunkel wählt jeder für sich selbst.</p>
 
       <div className="row">
         <label className="field"><span>Produktname</span>
@@ -569,8 +569,8 @@ function Branding({ data, updateData }) {
         <input type="text" value={b.logoUrl ?? ""} placeholder="https://… (leer lassen für Wortmarke)" onChange={(e) => set({ logoUrl: e.target.value })} /></label>
 
       <div className="row">
-        <label className="field"><span>Modus</span>
-          <select value={t.mode || "dark"} onChange={(e) => setTheme({ mode: e.target.value })}>
+        <label className="field"><span>Modus (nur für dich · dieses Gerät)</span>
+          <select value={themeMode === "light" ? "light" : "dark"} onChange={(e) => onThemeMode && onThemeMode(e.target.value)} disabled={!onThemeMode}>
             <option value="dark">Dunkel</option>
             <option value="light">Hell</option>
           </select></label>

@@ -22,6 +22,8 @@ Alles, was du zum Loslegen brauchst – einfach erklärt, Schritt für Schritt.
 
 **Touch ID / Windows Hello:** Nach dem ersten Login kannst du den Fingerabdruck aktivieren – danach genügt beim Start der Finger.
 
+**Hell oder dunkel anzeigen:** Oben rechts schaltest du mit „☀️ Hell" / „🌙 Dunkel" die Anzeige um. Diese Wahl gilt nur für dich auf diesem Gerät – sie ändert nichts bei deinen Kolleginnen und Kollegen.
+
 **Ersteinrichtung (Admin) unter „Stammdaten":**
 1. Auftraggeberkonto anlegen (dein Firmenkonto, von dem überwiesen wird).
 2. Module wählen (Erstattungen oder Sammelüberweisung; optional Rechnungen).
@@ -86,6 +88,8 @@ Tab **Rückbuchungen**: offene Chargebacks mit Status/Frist + Kennzahlen (offen/
 ## 7b · Belege per E-Mail (Bestellbestätigungen & Einkäufe)
 
 Du bekommst eine persönliche Weiterleitungs-Adresse (Stammdaten → „Belege per E-Mail"). Leitest du eine Bestellbestätigung oder Einkaufs-Mail dorthin weiter, wird sie **revisionssicher** archiviert (Original unverändert, Zeitstempel, Prüfsumme) und – wenn aktiviert – automatisch an deinen Steuerberater oder direkt an DATEV (Unternehmen online) weitergeleitet. Du trägst nur die Ziel-E-Mail ein.
+
+**Beleg ansehen:** Unter „Belege & Buchhaltung" auf **„Archiv anzeigen"** klicken und bei einem Eintrag auf **„Ansehen"**. Dort öffnest du den erzeugten **PDF-Beleg** oder lädst die **Original-Mail (.eml)** und Anhänge herunter. Die SHA-256-Prüfsumme wird mit angezeigt.
 
 > Hinweis: Per Mail empfangene Belege liegen serverseitig (anders als der E2E-Tresor) – das ist bei „Mail an eine Adresse" unvermeidbar. Für die steuerliche Anerkennung gehört eine Verfahrensdokumentation dazu (Vorlage liegt bei).
 

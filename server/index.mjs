@@ -243,6 +243,28 @@ function send(res, code, obj) {
   });
   res.end(body);
 }
+// MIME-Typ aus Dateiendung (für die Beleg-Auslieferung).
+const belegMime = (n) =>
+  /\.pdf$/i.test(n) ? "application/pdf"
+  : /\.eml$/i.test(n) ? "message/rfc822"
+  : /\.png$/i.test(n) ? "image/png"
+  : /\.jpe?g$/i.test(n) ? "image/jpeg"
+  : /\.tiff?$/i.test(n) ? "image/tiff"
+  : /\.gif$/i.test(n) ? "image/gif"
+  : "application/octet-stream";
+// Rohe Bytes ausliefern (Beleg-Datei zum Ansehen/Download).
+function sendRaw(res, code, buf, contentType, filename) {
+  res.writeHead(code, {
+    "Content-Type": contentType || "application/octet-stream",
+    "Content-Disposition": `inline; filename="${String(filename || "datei").replace(/["\r\n]/g, "")}"`,
+    "Content-Length": buf.length,
+    "Access-Control-Allow-Origin": ORIGIN,
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+  });
+  res.end(buf);
+}
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -642,13 +664,48 @@ const server = http.createServer(async (req, res) => {
     }
 
     // GET /api/tenants/:id/belege – revisionssicheres Beleg-Archiv (Metadaten).
-    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "belege" && req.method === "GET") {
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "belege" && parts.length === 4 && req.method === "GET") {
       const id = parts[2];
       if (!validId(id)) return send(res, 404, { error: "not_found" });
       const t = await readTenant(id);
       if (!t) return send(res, 404, { error: "not_found" });
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
       return send(res, 200, { belege: t.belege || [] });
+    }
+
+    // GET /api/tenants/:id/belege/:beId/files – abgelegte Dateien eines Belegs (Original-.eml, PDF, Anhänge).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "belege" && parts[5] === "files" && req.method === "GET") {
+      const id = parts[2]; const beId = parts[4];
+      if (!validId(id) || !validId(beId)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const dir = path.join(DATA_DIR, "belege", id);
+      let names = [];
+      try { names = (await fs.readdir(dir)).filter((n) => n === beId + ".eml" || n.startsWith(beId + "_")); } catch { /* leer */ }
+      const files = [];
+      for (const n of names) {
+        try { const st = await fs.stat(path.join(dir, n)); files.push({ name: n, size: st.size, type: belegMime(n) }); } catch { /* egal */ }
+      }
+      // Sortierung: PDF zuerst (am besten ansehbar), dann Original-.eml, dann Rest.
+      files.sort((a, b) => (b.type === "application/pdf") - (a.type === "application/pdf") || a.name.localeCompare(b.name));
+      return send(res, 200, { files });
+    }
+
+    // GET /api/tenants/:id/belege/:beId/file/:name – eine abgelegte Beleg-Datei ausliefern.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "belege" && parts[5] === "file" && req.method === "GET") {
+      const id = parts[2]; const beId = parts[4]; const name = decodeURIComponent(parts[6] || "");
+      if (!validId(id) || !validId(beId)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      // Pfad-Sicherheit: Name muss zum Beleg gehören, keine Traversal-Zeichen.
+      if (name.includes("/") || name.includes("\\") || name.includes("..") || !(name === beId + ".eml" || name.startsWith(beId + "_"))) {
+        return send(res, 404, { error: "not_found" });
+      }
+      let buf;
+      try { buf = await fs.readFile(path.join(DATA_DIR, "belege", id, name)); } catch { return send(res, 404, { error: "not_found" }); }
+      return sendRaw(res, 200, buf, belegMime(name), name);
     }
 
     // POST /api/inbound-email – eingehende Beleg-Mail (Postmark-Inbound ODER eigenes Format).

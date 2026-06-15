@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>TESTANON20260615A</MsgId>
+      <CreDtTm>2026-06-15T09:48:52Z</CreDtTm>
+      <NbOfTxs>4</NbOfTxs>
+      <CtrlSum>3674.49</CtrlSum>
+      <InitgPty>
+        <Nm>Beispiel Handel GmbH</Nm>
+      </InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>TESTANON20260615A-PMT</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <BtchBookg>false</BtchBookg>
+      <NbOfTxs>4</NbOfTxs>
+      <CtrlSum>3674.49</CtrlSum>
+      <PmtTpInf>
+        <SvcLvl><Cd>SEPA</Cd></SvcLvl>
+      </PmtTpInf>
+      <ReqdExctnDt><Dt>2026-06-22</Dt></ReqdExctnDt>
+      <Dbtr>
+        <Nm>Beispiel Handel GmbH</Nm>
+      </Dbtr>
+      <DbtrAcct><Id><IBAN>DE02100500000054540402</IBAN></Id></DbtrAcct>
+      <DbtrAgt><FinInstnId><BICFI>BELADEBEXXX</BICFI></FinInstnId></DbtrAgt>
+      <ChrgBr>SLEV</ChrgBr>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>RECH-10042</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">1249.00</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>BYLADEM1001</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Anna Beispiel</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE02120300000000202051</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Erstattung Bestellung 10042</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>STORNO-88123</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">49.99</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>CMCIDEDDXXX</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Bernd Mustermann</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE02300209000106531065</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Storno Ticket 88123</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>LR-2026-0033</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">2300.00</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>NOLADE21HAN</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Cafe Sonnenschein UG</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE19250501800600190169</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Lieferantenrechnung 2026-0033</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>GUT-555</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">75.50</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>SSKMDEMMXXX</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>David Schoeller</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE02701500000000594937</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Auszahlung Gutschrift</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>

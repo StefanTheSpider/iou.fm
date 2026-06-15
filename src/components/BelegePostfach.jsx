@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 
 // Belege & Buchhaltung – EINE Sektion für alles rund um Belege:
 //  • persönliche Empfangs-Adresse (eingehende Belege per E-Mail sammeln, revisionssicher archivieren)
@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 export default function BelegePostfach({ inbox, data = null, updateData = null, rechnungOn = false, onOpen = null }) {
   const [cfg, setCfg] = useState(null);
   const [belege, setBelege] = useState(null);
+  const [detail, setDetail] = useState(null); // { id, files: [{name,size,type}] }
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -35,6 +36,27 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     setBusy("archive");
     try { setBelege(await inbox.belege()); } catch { setBelege([]); } finally { setBusy(""); }
   }
+  // Dateien eines Belegs nachladen und aufklappen (Original-.eml, PDF, Anhänge).
+  async function toggleFiles(beId) {
+    setErr("");
+    if (detail?.id === beId) { setDetail(null); return; }
+    setBusy("files-" + beId);
+    try { setDetail({ id: beId, files: await inbox.files(beId) }); }
+    catch (e) { setErr(e.message || "Dateien konnten nicht geladen werden."); }
+    finally { setBusy(""); }
+  }
+  async function openOne(beId, name) {
+    setErr("");
+    try { await inbox.openFile(beId, name); }
+    catch (e) { setErr(e.message || "Datei konnte nicht geöffnet werden."); }
+  }
+  function fileLabel(name) {
+    if (/_beleg\.pdf$/i.test(name)) return "📄 PDF-Beleg ansehen";
+    if (/\.eml$/i.test(name)) return "✉️ Original-Mail (.eml) herunterladen";
+    if (/\.pdf$/i.test(name)) return "📄 " + name.replace(/^[0-9a-f-]{36}_/i, "");
+    return "📎 " + name.replace(/^[0-9a-f-]{36}_/i, "");
+  }
+  const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
   function copyAddr() { try { navigator.clipboard.writeText(cfg.address); setMsg("Adresse kopiert."); } catch { /* egal */ } }
   function copySender() { try { navigator.clipboard.writeText(cfg.senderEmail); setMsg("Absenderadresse kopiert."); } catch { /* egal */ } }
   async function confirmDone() {
@@ -125,15 +147,41 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
           {belege && belege.length > 0 && (
             <div className="table-wrap" style={{ marginTop: 12 }}>
               <table>
-                <thead><tr><th>Empfangen</th><th>Von</th><th>Betreff</th><th>Anhänge</th></tr></thead>
+                <thead><tr><th>Empfangen</th><th>Von</th><th>Betreff</th><th>Anhänge</th><th></th></tr></thead>
                 <tbody>
                   {belege.slice(0, 50).map((b) => (
-                    <tr key={b.id}>
+                    <Fragment key={b.id}>
+                    <tr>
                       <td>{new Date(b.receivedAt).toLocaleString("de-DE")}</td>
                       <td>{b.from}</td>
                       <td>{b.subject}</td>
                       <td>{(b.attachments || []).length}</td>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <button className="btn ghost small" disabled={busy === "files-" + b.id} onClick={() => toggleFiles(b.id)}>
+                          {busy === "files-" + b.id ? "Lädt…" : (detail?.id === b.id ? "Schließen" : "Ansehen")}
+                        </button>
+                      </td>
                     </tr>
+                    {detail?.id === b.id && (
+                      <tr>
+                        <td colSpan={5} style={{ background: "var(--raised-2, rgba(255,255,255,.03))" }}>
+                          <div style={{ padding: "6px 2px" }}>
+                            <div className="note" style={{ marginBottom: 6 }}>
+                              Revisionssicher abgelegt · Prüfsumme (SHA-256): <code style={{ fontSize: 11 }}>{b.sha256}</code>
+                            </div>
+                            {detail.files.length === 0 && <p className="note">Keine abgelegten Dateien gefunden.</p>}
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                              {detail.files.map((f) => (
+                                <button key={f.name} className="btn small" onClick={() => openOne(b.id, f.name)} title={f.name}>
+                                  {fileLabel(f.name)} <span className="muted" style={{ fontWeight: 400 }}>· {fmtKB(f.size)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

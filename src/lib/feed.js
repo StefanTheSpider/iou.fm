@@ -50,6 +50,31 @@ export async function getBelege(session) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/belege`), { headers: auth(session) });
   return r.ok ? (await r.json()).belege || [] : [];
 }
+// Abgelegte Dateien eines Belegs (Original-.eml, gerendertes PDF, Anhänge).
+export async function getBelegFiles(session, beId) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/belege/${beId}/files`), { headers: auth(session) });
+  return r.ok ? (await r.json()).files || [] : [];
+}
+// Eine Beleg-Datei laden und im System-Viewer öffnen (PDF/Bild) bzw. herunterladen (.eml).
+export async function openBelegFile(session, beId, name) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/belege/${beId}/file/${encodeURIComponent(name)}`), { headers: auth(session) });
+  if (!r.ok) throw new Error(`Datei konnte nicht geladen werden (${r.status}).`);
+  const blob = await r.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const viewable = /\.(pdf|png|jpe?g|gif|tiff?)$/i.test(name);
+  if (viewable) {
+    const w = window.open(objUrl, "_blank", "noopener");
+    if (!w) triggerDownload(objUrl, name); // Popup blockiert → herunterladen
+  } else {
+    triggerDownload(objUrl, name); // .eml u. Ä. immer herunterladen
+  }
+  setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+}
+function triggerDownload(url, filename) {
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
 
 // Rechnungs-PDFs an Steuerberater/DATEV mailen (Belege).
 export async function sendInvoiceBelege(session, { to, files, subject, text }) {
