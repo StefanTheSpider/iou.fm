@@ -12,7 +12,7 @@ import Footer from "./components/Footer.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege, getBelegFiles, openBelegFile, uploadRechnungBelege, sendRechnungBelege } from "./lib/feed.js";
+import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege, getBelegFiles, openBelegFile, fetchBelegFileBytes, uploadRechnungBelege, sendRechnungBelege } from "./lib/feed.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics, getOwnerCustomers } from "./lib/billing.js";
 
@@ -329,6 +329,7 @@ export default function App() {
     belege: () => getBelege(sessionRef.current),
     files: (beId) => getBelegFiles(sessionRef.current, beId),
     openFile: (beId, name) => openBelegFile(sessionRef.current, beId, name),
+    fileBytes: (beId, name) => fetchBelegFileBytes(sessionRef.current, beId, name),
   }), []);
 
   // Abo/Lizenz-Aktionen für die Stammdaten-Oberfläche.
@@ -486,7 +487,7 @@ export default function App() {
             {tab === "lohn" && isAdmin && <Lohn data={data} updateData={effUpdateData} canPay={isAdmin} ebicsAllowed={ebicsAllowed} />}
             {tab === "erstattung" && <Erstattungen data={data} updateData={effUpdateData} profile={payoutMode} canPay={isAdmin} feed={feed} onAppRefunds={demoMode ? null : bookAppRefunds} userName={session.currentUser.username} ebicsAllowed={ebicsAllowed} />}
             {tab === "rechnung" && rechnungOn && <Rechnungspruefung data={data} updateData={effUpdateData} />}
-            {tab === "rechnungen" && rechnungZahlungOn && <Rechnungen data={data} updateData={effUpdateData} canPay={isAdmin} userName={session.currentUser.username} ebicsAllowed={ebicsAllowed} onSendBelege={demoMode ? null : (payload) => sendInvoiceBelege(sessionRef.current, payload)} onUploadBelege={demoMode ? null : (batchId, files) => uploadRechnungBelege(sessionRef.current, batchId, files)} onSendRechnungBelege={demoMode ? null : (batchId) => sendRechnungBelege(sessionRef.current, batchId)} />}
+            {tab === "rechnungen" && rechnungZahlungOn && <Rechnungen data={data} updateData={effUpdateData} canPay={isAdmin} userName={session.currentUser.username} ebicsAllowed={ebicsAllowed} onSendBelege={demoMode ? null : (payload) => sendInvoiceBelege(sessionRef.current, payload)} onUploadBelege={demoMode ? null : (batchId, files) => uploadRechnungBelege(sessionRef.current, batchId, files)} onSendRechnungBelege={demoMode ? null : (batchId) => sendRechnungBelege(sessionRef.current, batchId)} mailbox={demoMode ? null : inbox} />}
             {tab === "anfragen" && <Anfragen feed={feed} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} onSendRechnungBelege={demoMode ? null : (batchId) => sendRechnungBelege(sessionRef.current, batchId)} />}

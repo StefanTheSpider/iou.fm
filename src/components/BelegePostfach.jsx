@@ -1,5 +1,10 @@
 import { useState, useEffect, Fragment } from "react";
 
+// DATEV-Direktversand ist noch NICHT produktionsreif (DATEV lehnt relay-gesendete Mails ab,
+// „sender address not authorized"). Bis das gelöst ist (eigener Versandweg oder DATEV-API),
+// blenden wir alle DATEV-Teile aus und bewerben sie nicht. Ein Schalter genügt zum Reaktivieren.
+const DATEV_ENABLED = false;
+
 // Belege & Buchhaltung – EINE Sektion für alles rund um Belege:
 //  • persönliche Empfangs-Adresse (eingehende Belege per E-Mail sammeln, revisionssicher archivieren)
 //  • zentrale Empfänger (Steuerberater + DATEV) – nur EINMAL gepflegt, von beiden Funktionen genutzt
@@ -80,7 +85,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Belege &amp; Buchhaltung <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· optional</span></h2>
       <p className="note">
-        Ein Ort für alle Belege: eingehende Belege per E-Mail sammeln, deinen Steuerberater/DATEV
+        Ein Ort für alle Belege: eingehende Belege per E-Mail sammeln, deinen Steuerberater
         <strong> einmal</strong> hinterlegen und festlegen, was automatisch dorthin geht. Alles wird
         revisionssicher (mit Zeitstempel + Prüfsumme) archiviert.
       </p>
@@ -91,7 +96,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
         </p>
       ) : (
         <>
-          {cfg.datevConfirmLink && (
+          {DATEV_ENABLED && cfg.datevConfirmLink && (
             <p className="note" style={{ background: "rgba(90,217,160,.12)", border: "1px solid rgba(90,217,160,.45)", borderRadius: 8, padding: "12px 14px", color: "#bdf0d6" }}>
               ✅ <strong>Fast fertig:</strong> einmal in DATEV freigeben – danach verschwindet dieser Hinweis automatisch.
               <br />
@@ -109,7 +114,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
           </label>
           <p className="note" style={{ marginTop: 0 }}>Richte in deinem Mailprogramm eine Weiterleitung an diese Adresse ein (oder leite Mails manuell weiter).</p>
 
-          {cfg.senderEmail && (
+          {DATEV_ENABLED && cfg.senderEmail && (
             <label className="field" style={{ marginTop: 10 }}>
               <span>iou.fm-Absenderadresse <span className="muted" style={{ fontWeight: 400 }}>· in DATEV als freigegebenen Absender hinterlegen</span></span>
               <div style={{ display: "flex", gap: 8 }}>
@@ -119,23 +124,17 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
             </label>
           )}
 
-          <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>Empfänger (Steuerberater / DATEV)</h3>
+          <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>Empfänger (Steuerberater)</h3>
           <label className="field" style={{ display: "block" }}><span>Steuerberater-E-Mail</span>
             <input type="email" style={{ width: "100%" }} value={cfg.belegEmail || ""} onChange={(e) => set({ belegEmail: e.target.value })} placeholder="kanzlei@example.de" title={cfg.belegEmail || ""} /></label>
-          <label className="field" style={{ display: "block", marginTop: 8 }}><span>DATEV-Beleg-E-Mail <span className="muted" style={{ fontWeight: 400 }}>· Unternehmen online, optional · endet auf @uploadmail.datev.de</span></span>
-            <input type="email" style={{ width: "100%" }} value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@uploadmail.datev.de" title={cfg.datevEmail || ""} /></label>
-          <p className="note" style={{ marginTop: 0 }}>Diese Empfänger gelten für beide Funktionen unten. Beide Felder dürfen befüllt sein.</p>
-          {[cfg.belegEmail, cfg.datevEmail].some((x) => x && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x).trim())) && (
-            <p className="note" style={{ background: "rgba(255,107,107,.12)", border: "1px solid rgba(255,107,107,.5)", borderRadius: 8, padding: "10px 12px", color: "#ffb3b3", marginTop: 4 }}>
-              ⚠️ Eine Empfänger-Adresse ist <strong>keine vollständige E-Mail-Adresse</strong> (es fehlt z. B. <code>@…</code>). Die DATEV-Upload-Adresse endet i. d. R. auf <code>@uploadmail.datev.de</code>. Ohne gültige Adresse schlägt der Versand fehl.
-            </p>
+          {DATEV_ENABLED && (
+            <label className="field" style={{ display: "block", marginTop: 8 }}><span>DATEV-Beleg-E-Mail <span className="muted" style={{ fontWeight: 400 }}>· Unternehmen online, optional · endet auf @uploadmail.datev.de</span></span>
+              <input type="email" style={{ width: "100%" }} value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@uploadmail.datev.de" title={cfg.datevEmail || ""} /></label>
           )}
-          {cfg.senderEmail && (
-            <p className="note" style={{ background: "rgba(201,162,75,.12)", border: "1px solid rgba(201,162,75,.4)", borderRadius: 8, padding: "10px 12px", color: "#e7c982", marginTop: 4 }}>
-              ⚠️ <strong>Wichtig für DATEV:</strong> DATEV nimmt nur Mails von freigegebenen Absendern an.
-              Hinterlege in DATEV Unternehmen online unter <em>Belegtransfer → freigegebene Absender</em> diese Adresse:
-              <br /><code style={{ userSelect: "all" }}>{cfg.senderEmail}</code>
-              <button className="btn ghost small" style={{ marginLeft: 8 }} onClick={copySender}>Kopieren</button>
+          <p className="note" style={{ marginTop: 0 }}>Dieser Empfänger gilt für die Funktionen unten.</p>
+          {cfg.belegEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(cfg.belegEmail).trim()) && (
+            <p className="note" style={{ background: "rgba(255,107,107,.12)", border: "1px solid rgba(255,107,107,.5)", borderRadius: 8, padding: "10px 12px", color: "#ffb3b3", marginTop: 4 }}>
+              ⚠️ Die Steuerberater-Adresse ist <strong>keine vollständige E-Mail-Adresse</strong> (es fehlt z. B. <code>@…</code>).
             </p>
           )}
 
@@ -151,21 +150,25 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
             </label>
           )}
 
-          <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>DATEV-Rückmeldungen</h3>
-          <p className="note" style={{ marginTop: 0 }}>Was DATEV zu deinen gesendeten Belegen zurückmeldet (Erfolg/Fehler). So siehst du, ob ein Beleg in DATEV angekommen ist – statt im Stillen zu raten.</p>
-          <div className="toolbar" style={{ marginBottom: 8, marginTop: 0 }}>
-            <button className="btn ghost small" disabled={busy === "refresh"} onClick={refreshCfg}>{busy === "refresh" ? "Lädt…" : "Aktualisieren"}</button>
-            {(cfg.datevNotices || []).length > 0 && <button className="btn ghost small" onClick={clearNotices}>Liste leeren</button>}
-          </div>
-          {(cfg.datevNotices || []).length === 0
-            ? <p className="note" style={{ marginTop: 0 }}>Noch keine Rückmeldung von DATEV. Sende einen Beleg und klick nach ~1–2 Minuten auf „Aktualisieren".</p>
-            : (cfg.datevNotices || []).map((n, i) => (
-                <div key={i} className="note" style={{ marginTop: 0, marginBottom: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid", borderColor: n.isError ? "rgba(255,107,107,.5)" : "rgba(90,217,160,.45)", background: n.isError ? "rgba(255,107,107,.10)" : "rgba(90,217,160,.10)", color: n.isError ? "#ffb3b3" : "#bdf0d6" }}>
-                  <strong>{n.isError ? "⚠️ Fehler" : "✓ OK"}</strong> · {new Date(n.receivedAt).toLocaleString("de-DE")}<br />
-                  <span style={{ color: "var(--text)" }}>{n.subject || "(ohne Betreff)"}</span>
-                  {n.text ? <><br /><span className="muted" style={{ fontSize: 12 }}>{n.text.slice(0, 240)}</span></> : null}
-                </div>
-              ))}
+          {DATEV_ENABLED && (
+            <>
+              <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>DATEV-Rückmeldungen</h3>
+              <p className="note" style={{ marginTop: 0 }}>Was DATEV zu deinen gesendeten Belegen zurückmeldet (Erfolg/Fehler).</p>
+              <div className="toolbar" style={{ marginBottom: 8, marginTop: 0 }}>
+                <button className="btn ghost small" disabled={busy === "refresh"} onClick={refreshCfg}>{busy === "refresh" ? "Lädt…" : "Aktualisieren"}</button>
+                {(cfg.datevNotices || []).length > 0 && <button className="btn ghost small" onClick={clearNotices}>Liste leeren</button>}
+              </div>
+              {(cfg.datevNotices || []).length === 0
+                ? <p className="note" style={{ marginTop: 0 }}>Noch keine Rückmeldung von DATEV.</p>
+                : (cfg.datevNotices || []).map((n, i) => (
+                    <div key={i} className="note" style={{ marginTop: 0, marginBottom: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid", borderColor: n.isError ? "rgba(255,107,107,.5)" : "rgba(90,217,160,.45)", background: n.isError ? "rgba(255,107,107,.10)" : "rgba(90,217,160,.10)", color: n.isError ? "#ffb3b3" : "#bdf0d6" }}>
+                      <strong>{n.isError ? "⚠️ Fehler" : "✓ OK"}</strong> · {new Date(n.receivedAt).toLocaleString("de-DE")}<br />
+                      <span style={{ color: "var(--text)" }}>{n.subject || "(ohne Betreff)"}</span>
+                      {n.text ? <><br /><span className="muted" style={{ fontSize: 12 }}>{n.text.slice(0, 240)}</span></> : null}
+                    </div>
+                  ))}
+            </>
+          )}
 
           <div className="toolbar" style={{ marginBottom: 0, marginTop: 14 }}>
             <span className="note">Im Archiv: {belege ? belege.length : (cfg.count ?? 0)} Beleg(e).</span>

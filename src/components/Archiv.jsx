@@ -28,7 +28,7 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
   async function resendBelege(b) {
     if (!onSendRechnungBelege) return;
     setSendBusy(b.id); setDl("");
-    try { const res = await onSendRechnungBelege(b.id); setDl(`✓ ${res?.sent || ""} Beleg(e) aus „${b.filename}" an DATEV/Steuerberater gesendet.`); }
+    try { const res = await onSendRechnungBelege(b.id); setDl(`✓ ${res?.sent || ""} Beleg(e) aus „${b.filename}" an den Steuerberater gesendet.`); }
     catch (e) { setDl("⚠️ " + (e.message || "Versand fehlgeschlagen.")); }
     finally { setSendBusy(""); setTimeout(() => setDl(""), 6000); }
   }
@@ -111,7 +111,7 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
                   <td className="muted">{b.filename}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {canPay && b.xml && <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); reDownload(b); }}>erneut laden</button>}
-                    {canPay && b.kind === "rechnung" && onSendRechnungBelege && <button className="btn ghost small" style={{ marginLeft: 6 }} disabled={sendBusy === b.id} onClick={(e) => { e.stopPropagation(); resendBelege(b); }}>{sendBusy === b.id ? "Sende…" : "An DATEV senden"}</button>}
+                    {canPay && b.kind === "rechnung" && onSendRechnungBelege && <button className="btn ghost small" style={{ marginLeft: 6 }} disabled={sendBusy === b.id} onClick={(e) => { e.stopPropagation(); resendBelege(b); }}>{sendBusy === b.id ? "Sende…" : "An Steuerberater senden"}</button>}
                   </td>
                 </tr>
                 {openId === b.id && (b.payments || []).map((p, i) => (

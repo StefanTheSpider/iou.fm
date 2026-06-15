@@ -68,12 +68,13 @@ Tipp: Über das **Suchfeld** (Bestellnummer oder Name) findest du einen Eintrag 
 ## 5 · Lieferantenrechnungen zahlen
 
 1. Tab **Rechnungen** öffnen, PDFs laden (E-Rechnung exakt, sonst Mustererkennung; gescannte PDFs werden per Texterkennung gelesen).
+   - **Per E-Mail eingegangene Rechnungen:** Leite eine Rechnung (PDF) an deine `belege-…@iou-tech.com` weiter und klick dann auf **„Eingegangene Rechnungen laden"** – iou.fm liest sie ein und legt sie als Entwurf zum Prüfen/Auszahlen an. (Belege ohne IBAN, z. B. Tickets, werden übersprungen.)
 2. Lieferanten-Gedächtnis füllt bekannte IBANs automatisch.
-3. Prüfen → als Admin SEPA-Datei erstellen. Im **Bank-Tarif** kannst du danach direkt **„Per EBICS an Bank senden"** – die Belege gehen dann automatisch an DATEV/Steuerberater.
-4. **Schon bezahlt?** Erscheint die Warnung, kannst du die Rechnung mit **„Nur an DATEV weiterleiten (nicht zahlen)"** trotzdem in die Buchhaltung geben, ohne sie erneut zu überweisen.
-5. **Später erneut senden:** Im **Archiv** (nur Admin) hat jeder Rechnungs-Lauf den Button **„An DATEV senden"** – auch Tage später und geräteübergreifend.
+3. Prüfen → als Admin SEPA-Datei erstellen. Im **Bank-Tarif** kannst du danach direkt **„Per EBICS an Bank senden"** – die Belege gehen dann automatisch an den Steuerberater.
+4. **Schon bezahlt?** Erscheint die Warnung, kannst du die Rechnung mit **„Nur an Steuerberater weiterleiten (nicht zahlen)"** trotzdem in die Buchhaltung geben, ohne sie erneut zu überweisen.
+5. **Später erneut senden:** Im **Archiv** (nur Admin) hat jeder Rechnungs-Lauf den Button **„An Steuerberater senden"** – auch Tage später und geräteübergreifend.
 
-**Belege automatisch an Steuerberater/DATEV:** In den Stammdaten beim Modul „Rechnungen" die Option „Belege automatisch versenden" aktivieren und deine Steuerberater-E-Mail (und/oder die DATEV-Beleg-E-Mail aus „Unternehmen online") eintragen. Sobald du die SEPA-Datei erstellst, gehen die geprüften Rechnungs-PDFs automatisch per Mail dorthin – bei DATEV landen sie direkt in Unternehmen online. Du musst nur die E-Mail eintragen.
+**Belege automatisch an den Steuerberater:** In den Stammdaten beim Modul „Rechnungen" die Option „Belege automatisch versenden" aktivieren und deine Steuerberater-E-Mail eintragen. Sobald du die SEPA-Datei erstellst, gehen die geprüften Rechnungs-PDFs automatisch per Mail an den Steuerberater. Du musst nur die E-Mail eintragen.
 
 > Die **Rechnungsnummer steht immer im Verwendungszweck** (B2B-Zuordnung). Lädst du eine bereits bezahlte Rechnung erneut hoch, kommt sofort die Warnung „bereits bezahlt".
 > Optional: Fälligkeit als Ausführungsdatum, Skonto, Vier-Augen-Prinzip.
@@ -91,7 +92,7 @@ Tab **Rückbuchungen**: offene Chargebacks mit Status/Frist + Kennzahlen (offen/
 
 ## 7b · Belege per E-Mail (Bestellbestätigungen & Einkäufe)
 
-Du bekommst eine persönliche Weiterleitungs-Adresse (Stammdaten → „Belege per E-Mail"). Leitest du eine Bestellbestätigung oder Einkaufs-Mail dorthin weiter, wird sie **revisionssicher** archiviert (Original unverändert, Zeitstempel, Prüfsumme) und – wenn aktiviert – automatisch an deinen Steuerberater oder direkt an DATEV (Unternehmen online) weitergeleitet. Du trägst nur die Ziel-E-Mail ein.
+Du bekommst eine persönliche Weiterleitungs-Adresse (Stammdaten → „Belege per E-Mail"). Leitest du eine Bestellbestätigung oder Einkaufs-Mail dorthin weiter, wird sie **revisionssicher** archiviert (Original unverändert, Zeitstempel, Prüfsumme) und – wenn aktiviert – automatisch an deinen Steuerberater weitergeleitet. Du trägst nur die Ziel-E-Mail ein.
 
 **Beleg ansehen:** Unter „Belege & Buchhaltung" auf **„Archiv anzeigen"** klicken und bei einem Eintrag auf **„Ansehen"**. Wichtig:
 

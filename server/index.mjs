@@ -81,8 +81,12 @@ async function sendAccountantFor(t, ym) {
   if (!a.enabled || !a.email) return { skipped: true, reason: "not_configured" };
   if (!RESEND_API_KEY) return { skipped: true, reason: "no_resend_key" };
   const csv = buildAccountantCsv(t.shopifyFeed || {}, ym, t.appRefunds || []);
+  // WICHTIG: über die verifizierte Versand-Domain senden (SEND_DOMAIN, z. B. iou-tech.com).
+  // Nicht RESEND_FROM verwenden – das zeigt evtl. noch auf eine alte, nicht mehr in Resend
+  // verifizierte Domain (z. B. fork-and-merge.com) und führt zu „domain is not verified" (403).
+  if (!t.senderToken) t.senderToken = newInboxToken();
   await sendViaResend({
-    apiKey: RESEND_API_KEY, from: RESEND_FROM, to: a.email, cc: a.cc || null,
+    apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to: a.email, cc: a.cc || null,
     subject: `Stornos & Erstattungen ${ym} – ${t.company || "iou.fm"}`,
     text: `Anbei die Stornierungen und Rückerstattungen für ${ym}.\n\nAutomatisch erstellt von iou.fm.`,
     filename: `Stornos_Erstattungen_${ym}.csv`, csv,
@@ -596,7 +600,8 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
       let to = (Array.isArray(b.to) ? b.to : [b.to]).map((x) => String(x || "").trim()).filter(Boolean);
       // Einzige Empfänger-Quelle: die zentrale Belege-Config (Steuerberater + DATEV).
-      if (!to.length) to = [t.inbox?.belegEmail, t.inbox?.datevEmail].map((x) => String(x || "").trim()).filter(Boolean);
+      // DATEV-Versand vorerst deaktiviert (Feature noch nicht produktionsreif) – nur Steuerberater.
+      if (!to.length) to = [t.inbox?.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
       const files = (Array.isArray(b.files) ? b.files : [])
         .filter((f) => f && f.filename && f.content)
         .slice(0, 50)
@@ -643,7 +648,7 @@ const server = http.createServer(async (req, res) => {
       if (!t) return send(res, 404, { error: "not_found" });
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
       if (!RESEND_API_KEY) return send(res, 503, { error: "mail_not_configured" });
-      const to = [t.inbox?.belegEmail, t.inbox?.datevEmail].map((x) => String(x || "").trim()).filter(Boolean);
+      const to = [t.inbox?.belegEmail].map((x) => String(x || "").trim()).filter(Boolean); // DATEV vorerst aus
       if (!to.length) return send(res, 400, { error: "no_recipient" });
       const dir = path.join(DATA_DIR, "rechnungsbelege", id, batchId);
       let names = [];
@@ -869,7 +874,7 @@ const server = http.createServer(async (req, res) => {
       // Body-PDF (+ etwaige Bild-Anhänge). Nur als letzter Fallback die .eml.
       let forwarded = false;
       if (t.inbox?.autoForward && RESEND_API_KEY) {
-        const to = [t.inbox.datevEmail, t.inbox.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
+        const to = [t.inbox.belegEmail].map((x) => String(x || "").trim()).filter(Boolean); // DATEV vorerst aus
         const files = pdfAttFiles.length
           ? [...pdfAttFiles, ...imgAttFiles]
           : (bodyPdfFile ? [bodyPdfFile, ...imgAttFiles] : (rawBuf.length ? [{ filename: beId + ".eml", content: rawB64 }] : []));

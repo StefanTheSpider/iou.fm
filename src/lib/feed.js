@@ -50,6 +50,12 @@ export async function getBelege(session) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/belege`), { headers: auth(session) });
   return r.ok ? (await r.json()).belege || [] : [];
 }
+// Bytes einer abgelegten Beleg-Datei (für lokales Einlesen in den Rechnungen-Tab).
+export async function fetchBelegFileBytes(session, beId, name) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/belege/${beId}/file/${encodeURIComponent(name)}`), { headers: auth(session) });
+  if (!r.ok) throw new Error(`Datei konnte nicht geladen werden (${r.status}).`);
+  return r.arrayBuffer();
+}
 // Abgelegte Dateien eines Belegs (Original-.eml, gerendertes PDF, Anhänge).
 export async function getBelegFiles(session, beId) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/belege/${beId}/files`), { headers: auth(session) });
