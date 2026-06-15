@@ -173,9 +173,14 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         }), true);
       }
       setScan("");
-      setSaved(newRows.length
-        ? `✓ ${newRows.length} eingegangene Rechnung(en) eingelesen – bitte prüfen, dann auszahlen.`
-        : "Keine neuen Rechnungen im E-Mail-Eingang gefunden.");
+      const skipped = newSeen.length - new Set(newRows.map((r) => r.belegId)).size;
+      if (newRows.length) {
+        setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${skipped ? ` · ${skipped} ohne zahlbare IBAN übersprungen (z. B. PayPal/Tickets)` : ""} – bitte prüfen, dann auszahlen.`);
+      } else if (newSeen.length) {
+        setError(`${newSeen.length} neue(r) Beleg(e) eingegangen, aber ohne zahlbare IBAN – z. B. PayPal/Karte oder Tickets ohne Bankverbindung. Solche Belege sind nicht per SEPA zahlbar (liegen aber im Beleg-Archiv).`);
+      } else {
+        setSaved("Keine neuen Belege im E-Mail-Eingang gefunden. (Schon eingelesene werden nicht erneut angezeigt.)");
+      }
     } catch (e) { setScan(""); setError("E-Mail-Eingang konnte nicht geladen werden: " + (e.message || "")); }
   }
 

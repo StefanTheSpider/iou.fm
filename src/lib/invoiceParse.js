@@ -19,12 +19,18 @@ export function normalizeSpacedNumbers(text) {
 // --- IBAN -------------------------------------------------------------------
 export function findIbans(text) {
   const t = String(text || "").toUpperCase();
-  const re = /\b([A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){10,30})\b/g;
+  // Generöser Kandidat: Ländercode + 2 Prüfziffern, dann Buchstaben/Ziffern/Leerzeichen.
+  // Wichtig: IBANs kleben in echten PDFs oft direkt am Folgetext (z. B. „…8286 00 Bismarckstr.").
+  const re = /[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){10,40}/g;
   const out = [];
   let m;
   while ((m = re.exec(t))) {
-    const cand = cleanIban(m[1]);
-    if (validateIban(cand).ok && !out.includes(cand)) out.push(cand);
+    const cleaned = cleanIban(m[0]);
+    // Längsten GÜLTIGEN Prefix nehmen – schneidet angeklebten Folgetext sauber ab.
+    for (let len = Math.min(cleaned.length, 34); len >= 15; len--) {
+      const cand = cleaned.slice(0, len);
+      if (validateIban(cand).ok) { if (!out.includes(cand)) out.push(cand); break; }
+    }
   }
   return out;
 }
