@@ -113,12 +113,10 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
           )}
 
           <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>Empfänger (Steuerberater / DATEV)</h3>
-          <div className="row">
-            <label className="field"><span>Steuerberater-E-Mail</span>
-              <input type="email" value={cfg.belegEmail || ""} onChange={(e) => set({ belegEmail: e.target.value })} placeholder="kanzlei@example.de" /></label>
-            <label className="field"><span>DATEV-Beleg-E-Mail <span className="muted" style={{ fontWeight: 400 }}>· Unternehmen online, optional</span></span>
-              <input type="email" value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@datev-upload.de" /></label>
-          </div>
+          <label className="field" style={{ display: "block" }}><span>Steuerberater-E-Mail</span>
+            <input type="email" style={{ width: "100%" }} value={cfg.belegEmail || ""} onChange={(e) => set({ belegEmail: e.target.value })} placeholder="kanzlei@example.de" title={cfg.belegEmail || ""} /></label>
+          <label className="field" style={{ display: "block", marginTop: 8 }}><span>DATEV-Beleg-E-Mail <span className="muted" style={{ fontWeight: 400 }}>· Unternehmen online, optional · endet auf @uploadmail.datev.de</span></span>
+            <input type="email" style={{ width: "100%" }} value={cfg.datevEmail || ""} onChange={(e) => set({ datevEmail: e.target.value })} placeholder="…@uploadmail.datev.de" title={cfg.datevEmail || ""} /></label>
           <p className="note" style={{ marginTop: 0 }}>Diese Empfänger gelten für beide Funktionen unten. Beide Felder dürfen befüllt sein.</p>
           {[cfg.belegEmail, cfg.datevEmail].some((x) => x && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x).trim())) && (
             <p className="note" style={{ background: "rgba(255,107,107,.12)", border: "1px solid rgba(255,107,107,.5)", borderRadius: 8, padding: "10px 12px", color: "#ffb3b3", marginTop: 4 }}>
