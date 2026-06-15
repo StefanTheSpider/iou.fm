@@ -31,11 +31,14 @@ export function findBic(text) {
 }
 
 // --- Beträge ----------------------------------------------------------------
-const AMOUNT_RE = /(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})\b/g; // deutsch: 1.234,56 / 1234,56
+// deutsch: 1.234,56 / 1234,56 UND „1.234,-" / „5.500,–" (volle Euro mit Strich).
+const AMOUNT_RE = /(\d{1,3}(?:\.\d{3})+|\d+),(\d{2}|[-–—])(?=\D|$)/g;
 export function amountToCents(s) {
-  const m = String(s).match(/(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})/);
+  const m = String(s).match(/(\d{1,3}(?:\.\d{3})+|\d+),(\d{2}|[-–—])/);
   if (!m) return 0;
-  return Math.round((parseInt(m[1].replace(/\./g, ""), 10) + parseInt(m[2], 10) / 100) * 100);
+  const euros = parseInt(m[1].replace(/\./g, ""), 10);
+  const cents = /^\d{2}$/.test(m[2]) ? parseInt(m[2], 10) : 0; // „,-" = 00 Cent
+  return Math.round(euros * 100 + cents);
 }
 // Schlüsselwörter mit Priorität (höher = wichtiger) für den Zahlbetrag.
 const TOTAL_KEYS = [
@@ -62,7 +65,7 @@ export function findAmountCents(lines) {
 // --- Rechnungsnummer --------------------------------------------------------
 export function findInvoiceNumber(text) {
   const t = String(text || "");
-  const re = /(?:rechnung(?:s)?[\s-]*(?:nr|nummer)\.?|invoice\s*(?:no|number)\.?|beleg(?:nr|nummer)\.?|rg[\s-]*nr\.?)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/\-.]{2,30})/i;
+  const re = /(?:rechnung(?:s)?[\s-]*(?:nr|nummer)\.?|invoice\s*(?:no|number)\.?|beleg(?:nr|nummer)\.?|r[ge]\.?[\s-]*nr\.?)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/\-.]{2,30})/i;
   const m = t.match(re);
   return m ? m[1].replace(/[.\-/]+$/, "") : "";
 }
@@ -84,28 +87,78 @@ export function findDueDate(text) {
   return "";
 }
 
-// --- Kreditor (Lieferant) – grobe Schätzung aus dem Briefkopf ---------------
-export function guessCreditor(text) {
+// --- Kreditor (Lieferant) ---------------------------------------------------
+// Wichtig: der EMPFÄNGER (die eigene Firma) steht ebenfalls oben auf der Rechnung
+// und darf NICHT als Lieferant erkannt werden. `ownNames` (Auftraggeber-/Firmen-
+// namen) werden deshalb aus allen Kandidaten ausgeschlossen.
+const FORM_RE = /\b(gmbh|ug|ag|kg|ohg|e\.?\s?k\.?|gbr|ltd|inc|e\.?\s?v\.?|mbh|mbb|partg|partnerschaft|co\.?\s?kg)\b/i;
+const isOwnName = (line, ownNames) => {
+  const L = lc(line);
+  return ownNames.some((n) => { const nn = lc(n).trim(); return nn.length >= 3 && L.includes(nn); });
+};
+export function guessCreditor(text, ownNames = []) {
   const lines = String(text || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  // Erste „firmenartige" Zeile: enthält Rechtsform oder ist großgeschrieben, kein Datum/Betrag.
-  const formRe = /\b(gmbh|ug|ag|kg|ohg|e\.k\.|gbr|ltd|inc|e\.v\.|mbh|co\.?\s?kg)\b/i;
-  const named = lines.slice(0, 12).find((l) => formRe.test(l) && l.length < 60);
+  const own = (ownNames || []).filter(Boolean);
+
+  // 1) „Kontoinhaber/Inhaber/Zahlungsempfänger: <Name>" – für SEPA am korrektesten
+  //    (der Cdtr-Name muss zum Kontoinhaber passen).
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/(?:konto\s*-?\s*inhaber|kto\.?-?\s*inhaber|inhaber|account\s*holder|zahlungsempfänger|payee|begünstigter)\s*[:\-]?\s*(.*)$/i);
+    if (m) {
+      let name = (m[1] || "").trim();
+      if (!name && lines[i + 1]) name = lines[i + 1].trim(); // Name evtl. in der Folgezeile
+      name = name.replace(/\s{2,}/g, " ").slice(0, 70).trim();
+      if (name && name.length >= 2 && !isOwnName(name, own)) return name;
+    }
+  }
+
+  // 2) Zeile(n) direkt nach „Bankverbindung/Bankdaten" – dort steht oft der Absender.
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (/bankverbindung|bankdaten/i.test(lines[i])) {
+      for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
+        const c = lines[j];
+        if (c && !/^(iban|bic|swift|bank(name)?|konto|ust|vat|steuer)\b/i.test(c) && !/^\d/.test(c) && !isOwnName(c, own)) {
+          return c.replace(/\s{2,}/g, " ").slice(0, 70).trim();
+        }
+      }
+    }
+  }
+
+  // 3) Erste Firmen-Zeile (Rechtsform), die NICHT die eigene Firma ist
+  //    (klassischer Briefkopf: Firmenname als eigene Zeile oben).
+  const named = lines.slice(0, 20).find((l) => FORM_RE.test(l) && l.length < 70 && !isOwnName(l, own));
   if (named) return named.replace(/\s{2,}/g, " ").trim();
-  // sonst die erste nicht-leere Zeile (oft der Briefkopf)
-  return (lines[0] || "").slice(0, 60);
+
+  // 4) Absender-Zeile im Briefkopf, Name+Adresse in EINER Zeile
+  //    (z. B. „brandmade, Zaunwickenweg 1a, 21147 Hamburg"): Name = Teil vor dem ersten Komma.
+  for (const l of lines.slice(0, 3)) {
+    if (l.includes(",") && /\b\d{5}\b/.test(l) && !isOwnName(l, own) && !/^\d/.test(l)) {
+      const name = l.split(",")[0].trim();
+      // nur wenn der Teil vor dem Komma KEINE Straße/Hausnummer ist
+      if (name.length >= 2 && !/(stra(ß|ss)e|str\.|weg|allee|platz|gasse|ring)\b/i.test(name) && !/\d/.test(name)) return name.slice(0, 70);
+    }
+  }
+
+  // 5) Fallback: erste Zeile, die nicht die eigene Firma/Adresse ist.
+  const first = lines.find((l) => !isOwnName(l, own) && !/^\d/.test(l));
+  return (first || lines[0] || "").slice(0, 70);
 }
 
 // Gesamt-Parser: nimmt entweder rohen Text oder Zeilen-Array.
-export function parseInvoice(input) {
+// opts.ownNames / opts.ownIbans = eigene Firma & Konten (Empfänger), die ausgeschlossen werden.
+export function parseInvoice(input, opts = {}) {
   const text = Array.isArray(input) ? input.join("\n") : String(input || "");
-  const ibans = findIbans(text);
+  const ownIbans = (opts.ownIbans || []).map((s) => String(s || "").replace(/\s/g, "").toUpperCase());
+  const allIbans = findIbans(text);
+  // Eigene Konten als Kreditor-IBAN ausschließen – Geld geht an den LIEFERANTEN.
+  const ibans = allIbans.filter((i) => !ownIbans.includes(i));
   return {
-    iban: ibans[0] || "",
-    ibans,
+    iban: (ibans[0] || allIbans[0] || ""),
+    ibans: ibans.length ? ibans : allIbans,
     bic: findBic(text),
     amountCents: findAmountCents(text),
     invoiceNumber: findInvoiceNumber(text),
     dueDate: findDueDate(text),
-    creditorName: guessCreditor(text),
+    creditorName: guessCreditor(text, opts.ownNames || []),
   };
 }

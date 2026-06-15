@@ -68,8 +68,16 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       for (const file of Array.from(fileList || [])) {
         if (!/\.pdf$/i.test(file.name)) continue;
         let ex;
-        try { ex = await extractInvoice(file); }
+        // Eigene Firma & Konten mitgeben – der Empfänger (z. B. Tix & Travel) darf nicht
+        // als Lieferant erkannt werden.
+        const ownNames = accounts.map((a) => a.name).filter(Boolean);
+        const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
+        try { ex = await extractInvoice(file, { ownNames, ownIbans }); }
         catch (e) { setError(`„${file.name}": ${e.message}`); continue; }
+        // Reiner Scan ohne Textebene → nichts auslesbar. Klar melden statt leerer Zeile.
+        if (ex.source === "heuristik" && ex.hasText === false) {
+          setError(`„${file.name}": Diese PDF enthält keinen auslesbaren Text (vermutlich ein Scan/Foto). Bitte Felder manuell ausfüllen.`);
+        }
         const iban = ex.iban ? cleanIban(ex.iban) : "";
         const known = creditors[iban];
         const meta = iban ? await ibanMeta(iban) : { ibanValid: false, ibanReason: "", bic: "" };
@@ -118,6 +126,29 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       if (due.length) return due[0] < today() ? today() : due[0]; // nie in der Vergangenheit
     }
     return today();
+  }
+
+  // Manuell: alle aktuell geladenen Rechnungs-PDFs SOFORT an Steuerberater/DATEV mailen
+  // (unabhängig von Zahlung/SEPA-Lauf). Versand geht serverseitig von der freigegebenen
+  // DATEV-Absenderadresse raus.
+  async function sendBelegeNow() {
+    setError("");
+    if (!onSendBelege) { setBelegMsg("Beleg-Versand ist in dieser Ansicht nicht verfügbar."); return; }
+    const files = rows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
+    if (!files.length) {
+      setBelegMsg("Keine PDF-Belege im Speicher. Bitte die Rechnungs-PDFs in dieser Sitzung (erneut) laden, dann senden.");
+      return;
+    }
+    setBelegMsg(`Sende ${files.length} Beleg(e) an DATEV/Steuerberater …`);
+    try {
+      const res = await onSendBelege({ files, subject: `Rechnungsbelege (${files.length})` });
+      setBelegMsg(`✓ ${res?.sent || files.length} Beleg(e) an Steuerberater/DATEV gesendet.`);
+    } catch (e) {
+      const m = e.message || "";
+      setBelegMsg(/Empfänger|recipient/i.test(m)
+        ? "Kein Empfänger hinterlegt – trage Steuerberater/DATEV unter Stammdaten → Belege & Buchhaltung ein."
+        : "Beleg-Versand fehlgeschlagen: " + m);
+    }
   }
 
   // Geprüfte Rechnungs-PDFs an Steuerberater/DATEV mailen (optional, nach Zahlung).
@@ -184,6 +215,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           <input ref={fileRef} type="file" accept="application/pdf" multiple style={{ display: "none" }}
             onChange={(e) => addFiles(e.target.files)} />
           <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? "Lese …" : "Rechnungs-PDFs laden"}</button>
+          {onSendBelege && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater/DATEV senden">An DATEV/Steuerberater senden</button>}
           <span className="note">Mehrere PDFs auf einmal möglich. Bekannte Lieferanten werden automatisch erkannt.</span>
         </div>
         {error && <p className="error-text">{error}</p>}

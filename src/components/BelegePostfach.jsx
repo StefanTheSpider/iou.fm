@@ -151,13 +151,13 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
                 <tbody>
                   {belege.slice(0, 50).map((b) => (
                     <Fragment key={b.id}>
-                    <tr>
-                      <td>{new Date(b.receivedAt).toLocaleString("de-DE")}</td>
-                      <td>{b.from}</td>
-                      <td>{b.subject}</td>
-                      <td>{(b.attachments || []).length}</td>
+                    <tr style={{ cursor: "pointer" }} onClick={() => toggleFiles(b.id)} title="Beleg ansehen">
+                      <td style={{ whiteSpace: "nowrap" }}>{new Date(b.receivedAt).toLocaleString("de-DE")}</td>
+                      <td style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={b.from}>{b.from}</td>
+                      <td style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={b.subject}>{b.subject}</td>
+                      <td style={{ textAlign: "center" }}>{(b.attachments || []).length}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn ghost small" disabled={busy === "files-" + b.id} onClick={() => toggleFiles(b.id)}>
+                        <button className="btn small" disabled={busy === "files-" + b.id} onClick={(e) => { e.stopPropagation(); toggleFiles(b.id); }}>
                           {busy === "files-" + b.id ? "Lädt…" : (detail?.id === b.id ? "Schließen" : "Ansehen")}
                         </button>
                       </td>

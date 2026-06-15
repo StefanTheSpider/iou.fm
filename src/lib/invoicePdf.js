@@ -70,11 +70,14 @@ async function findEInvoiceXml(pdf) {
 }
 
 // Öffentlich: eine Rechnungs-Datei -> bestmögliche Zahlungsdaten.
-export async function extractInvoice(file) {
+// opts.ownNames / opts.ownIbans = eigene Firma & Konten (Empfänger), die NICHT als
+// Lieferant erkannt werden dürfen.
+export async function extractInvoice(file, opts = {}) {
   const data = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data, isEvalSupported: false, useSystemFonts: false }).promise;
   const e = await findEInvoiceXml(pdf);
   if (e) return { ...e, fileName: file.name };
   const lines = await pdfText(pdf);
-  return { source: "heuristik", fileName: file.name, ...parseInvoice(lines) };
+  const hasText = lines.join("").replace(/\s/g, "").length > 0;
+  return { source: "heuristik", fileName: file.name, hasText, ...parseInvoice(lines, opts) };
 }
