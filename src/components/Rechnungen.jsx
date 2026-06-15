@@ -143,20 +143,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       // Inhaltliche Dubletten verhindern (gleiche Nr + IBAN + Betrag) – auch bei mehrfacher Weiterleitung.
       const dupKeys = new Set((rows || []).map(rowKey).filter((k) => k !== "||0"));
       const newRows = []; const newSeen = []; let dup = 0;
+      let failed = 0;
       for (const b of (belege || [])) {
         if (seen.has(b.id)) continue;
         newSeen.push(b.id);
         let files = [];
-        try { files = await mailbox.files(b.id); } catch { continue; }
+        try { files = await mailbox.files(b.id); } catch { failed++; continue; }
         // Echte Anhang-PDFs bevorzugt, sonst das aus dem Mailtext erzeugte PDF.
         const atts = files.filter((f) => /\.pdf$/i.test(f.name) && !/_beleg\.pdf$/i.test(f.name));
         const pick = atts.length ? atts : files.filter((f) => /_beleg\.pdf$/i.test(f.name));
         for (const f of pick) {
           setScan(`Lese „${(b.subject || b.from || "Beleg").slice(0, 40)}" …`);
-          let ab; try { ab = await mailbox.fileBytes(b.id, f.name); } catch { continue; }
+          let ab; try { ab = await mailbox.fileBytes(b.id, f.name); } catch { failed++; continue; }
           const cleanName = f.name.replace(/^[0-9a-f-]{36}_/i, "");
           const wrapper = { name: cleanName, arrayBuffer: () => Promise.resolve(ab.slice(0)) };
-          let ex; try { ex = await extractInvoice(wrapper, { ownNames, ownIbans }); } catch { continue; }
+          let ex; try { ex = await extractInvoice(wrapper, { ownNames, ownIbans }); } catch { failed++; continue; }
           const iban = ex.iban ? cleanIban(ex.iban) : "";
           if (!iban || !validateIban(iban).ok) continue; // ohne zahlbare IBAN keine Rechnung (Tickets etc. raus)
           const invoiceNumber = ex.invoiceNumber || "";
@@ -183,8 +184,10 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         }), true);
       }
       setScan("");
-      if (newRows.length) {
-        setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${dup ? ` · ${dup} Dublette(n) übersprungen` : ""} – bitte prüfen, dann auszahlen.`);
+      const failNote = failed ? ` ⚠ ${failed} Datei(en) konnten nicht gelesen werden.` : "";
+      if (failed && !newRows.length) setError(`${failed} eingegangene Datei(en) konnten nicht gelesen werden (beschädigt oder Server nicht erreichbar). Bitte erneut versuchen.`);
+      else if (newRows.length) {
+        setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${dup ? ` · ${dup} Dublette(n) übersprungen` : ""}${failNote} – bitte prüfen, dann auszahlen.`);
       } else if (dup) {
         setSaved(`Keine neuen Rechnungen – ${dup} bereits vorhandene Rechnung(en) übersprungen (gleiche Nr. + IBAN + Betrag).`);
       } else if (newSeen.length) {
@@ -322,7 +325,9 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
     // PDFs dieses Laufs dauerhaft im Hub ablegen (für späteres Re-Senden / EBICS-Forward).
     const belegeFiles = eligibleRows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
-    if (onUploadBelege && belegeFiles.length) { onUploadBelege(batchId, belegeFiles).catch(() => {}); }
+    if (onUploadBelege && belegeFiles.length) {
+      onUploadBelege(batchId, belegeFiles).catch(() => setBelegMsg("Hinweis: Belege konnten nicht dauerhaft im Archiv abgelegt werden – ein späterer erneuter Versand aus dem Archiv ist evtl. nicht möglich."));
+    }
 
     sendBelege(eligibleRows); // optional: Belege automatisch an Steuerberater
   }

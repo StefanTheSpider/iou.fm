@@ -41,6 +41,7 @@ export default function App() {
   const [update, setUpdate] = useState(null); // { version, notes, install }
   const [updating, setUpdating] = useState(false);
   const [updErr, setUpdErr] = useState("");
+  const [saveErr, setSaveErr] = useState(""); // sichtbarer Hinweis, falls lokales Speichern fehlschlägt
   const [feed, setFeed] = useState(null);       // Shopify-Feed vom Hub (Stornos/Refunds/Anfragen)
   const [feedBusy, setFeedBusy] = useState(false);
   const [ownerView, setOwnerView] = useState({ asUser: false, payout: null, rechnung: null, demo: false });
@@ -234,8 +235,8 @@ export default function App() {
     sessionRef.current = next;
     setSession(next);
     if (immediate) {
-      saveVault(next, nextData).then(() => { setDirty(false); flashSaved(); pushQuiet(); })
-        .catch((e) => console.error("Speichern fehlgeschlagen", e));
+      saveVault(next, nextData).then(() => { setDirty(false); setSaveErr(""); flashSaved(); pushQuiet(); })
+        .catch((e) => { console.error("Speichern fehlgeschlagen", e); setSaveErr("Speichern fehlgeschlagen – deine letzte Änderung wurde NICHT gespeichert. Bitte erneut versuchen."); });
     } else {
       setDirty(true);
     }
@@ -244,8 +245,8 @@ export default function App() {
   const commit = useCallback(() => {
     const s = sessionRef.current;
     if (!s) return;
-    saveVault(s, s.data).then(() => { setDirty(false); flashSaved(); pushQuiet(); })
-      .catch((e) => console.error("Speichern fehlgeschlagen", e));
+    saveVault(s, s.data).then(() => { setDirty(false); setSaveErr(""); flashSaved(); pushQuiet(); })
+      .catch((e) => { console.error("Speichern fehlgeschlagen", e); setSaveErr("Speichern fehlgeschlagen – deine Änderungen wurden NICHT gespeichert. Bitte erneut versuchen."); });
   }, [flashSaved, pushQuiet]);
 
   function lock() {
@@ -407,6 +408,13 @@ export default function App() {
   return (
     <div className="app">
       <UpdateBanner />
+      {saveErr && (
+        <div className="owner-banner" style={{ background: "rgba(255,107,107,.14)", borderColor: "rgba(255,107,107,.6)", color: "#ffb3b3" }}>
+          ⚠ {saveErr}
+          <button className="btn small" style={{ marginLeft: 12 }} onClick={commit}>Jetzt erneut speichern</button>
+          <button className="btn small ghost" style={{ marginLeft: 8 }} onClick={() => setSaveErr("")}>ausblenden</button>
+        </div>
+      )}
       <header className="topbar">
         <div className="brand"><Brand /></div>
         {setupDone && (

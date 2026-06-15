@@ -90,8 +90,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   async function onIbanChange(id, value) {
     patchRow(id, { iban: value });
     if (!value.trim()) { patchRow(id, { ibanValid: false, ibanReason: "", bic: "" }); return; }
-    const info = await inspectIban(value, { online: false });
-    patchRow(id, { ibanValid: info.ok, ibanReason: info.reason || "", bic: info.bic || "" });
+    try {
+      const info = await inspectIban(value, { online: false });
+      patchRow(id, { ibanValid: info.ok, ibanReason: info.reason || "", bic: info.bic || "" });
+    } catch { patchRow(id, { ibanValid: false, ibanReason: "IBAN-Prüfung fehlgeschlagen – bitte erneut versuchen." }); }
   }
 
   // Order als neue Zeile übernehmen (nach Prüfung/Bestätigung).

@@ -21,16 +21,21 @@ export default function Rechnungspruefung({ data, updateData }) {
   function pickSupplier(id) {
     setSupplierId(id);
     const s = suppliers.find((x) => x.id === id);
-    if (s) { setName(s.name); setIbanVal(s.iban); inspectIban(s.iban).then(setIbanInfo); }
+    if (s) { setName(s.name); setIbanVal(s.iban); inspectIban(s.iban).then(setIbanInfo).catch(() => setIbanInfo({ ok: false, reason: "IBAN-Prüfung fehlgeschlagen." })); }
   }
-  async function checkIban(v) { if (!v.trim()) { setIbanInfo(null); return null; } const r = await inspectIban(v, { online: false }); setIbanInfo(r); return r; }
+  async function checkIban(v) {
+    if (!v.trim()) { setIbanInfo(null); return null; }
+    try { const r = await inspectIban(v, { online: false }); setIbanInfo(r); return r; }
+    catch { const r = { ok: false, reason: "IBAN-Prüfung fehlgeschlagen." }; setIbanInfo(r); return r; }
+  }
 
   function setLine(id, patch) { setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l))); }
   function addLine() { setLines((ls) => [...ls, emptyLine()]); }
   function delLine(id) { setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls)); }
   function applyPaste() {
     const parsed = parsePastedLines(paste);
-    if (parsed.length) { setLines((ls) => [...ls.filter((l) => l.desc || l.price), ...parsed]); setPaste(""); setPasteOpen(false); }
+    if (parsed.length) { setLines((ls) => [...ls.filter((l) => l.desc || l.price), ...parsed]); setPaste(""); setPasteOpen(false); setError(""); }
+    else setError("Keine Positionen erkannt. Format pro Zeile: Bezeichnung ; Menge ; Einzelpreis.");
   }
 
   const totals = invoiceTotals(lines);

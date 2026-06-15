@@ -164,7 +164,9 @@ async function writeJson(file, obj) {
   await fs.writeFile(tmp, JSON.stringify(obj));
   await fs.rename(tmp, file); // atomar
 }
-const readTenant = (id) => readJson(tenantFile(id));
+// Zentral gegen ungültige/böswillige IDs absichern (Pfad-Sicherheit) – schützt ALLE Routen,
+// auch die, die vor readTenant kein eigenes validId() hatten.
+const readTenant = (id) => (validId(id) ? readJson(tenantFile(id)) : Promise.resolve(null));
 const writeTenant = (t) => writeJson(tenantFile(t.tenantId), t);
 const readUser = (u) => readJson(userFile(u));
 const writeUser = (rec) => writeJson(userFile(rec.username), rec);
@@ -471,6 +473,17 @@ const server = http.createServer(async (req, res) => {
       if (!target || target.tenantId !== admin.tenantId) return send(res, 404, { error: "not_found" });
       if (target.username.toLowerCase() === admin.username.toLowerCase())
         return send(res, 400, { error: "cannot_remove_self" });
+      // Den LETZTEN Admin nicht löschen – sonst bleibt der Mandant ohne Verwaltung.
+      if (target.role === "admin") {
+        let admins = 0;
+        try {
+          for (const f of await fs.readdir(USER_DIR)) {
+            const u = await readJson(path.join(USER_DIR, f));
+            if (u && u.tenantId === admin.tenantId && u.role === "admin") admins++;
+          }
+        } catch { admins = 2; /* im Fehlerfall lieber nicht blockieren */ }
+        if (admins <= 1) return send(res, 400, { error: "last_admin" });
+      }
       await fs.rm(userFile(b.username), { force: true });
       return send(res, 200, { ok: true });
     }
@@ -598,10 +611,10 @@ const server = http.createServer(async (req, res) => {
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
       if (!RESEND_API_KEY) return send(res, 503, { error: "mail_not_configured" });
       const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
-      let to = (Array.isArray(b.to) ? b.to : [b.to]).map((x) => String(x || "").trim()).filter(Boolean);
-      // Einzige Empfänger-Quelle: die zentrale Belege-Config (Steuerberater + DATEV).
-      // DATEV-Versand vorerst deaktiviert (Feature noch nicht produktionsreif) – nur Steuerberater.
-      if (!to.length) to = [t.inbox?.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
+      // Sicherheit: Empfänger NUR aus der serverseitigen Belege-Config (Steuerberater).
+      // Kein vom Client gesetztes `to` zulassen (sonst Versand an Fremdadressen über die
+      // verifizierte Tenant-Domain möglich). DATEV-Direktversand vorerst deaktiviert.
+      const to = [t.inbox?.belegEmail].map((x) => String(x || "").trim()).filter(Boolean);
       const files = (Array.isArray(b.files) ? b.files : [])
         .filter((f) => f && f.filename && f.content)
         .slice(0, 50)
@@ -752,7 +765,8 @@ const server = http.createServer(async (req, res) => {
 
     // GET /api/tenants/:id/belege/:beId/file/:name – eine abgelegte Beleg-Datei ausliefern.
     if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "belege" && parts[5] === "file" && req.method === "GET") {
-      const id = parts[2]; const beId = parts[4]; const name = decodeURIComponent(parts[6] || "");
+      const id = parts[2]; const beId = parts[4];
+      let name; try { name = decodeURIComponent(parts[6] || ""); } catch { return send(res, 400, { error: "bad_name" }); }
       if (!validId(id) || !validId(beId)) return send(res, 404, { error: "not_found" });
       const t = await readTenant(id);
       if (!t) return send(res, 404, { error: "not_found" });
@@ -1076,7 +1090,9 @@ const server = http.createServer(async (req, res) => {
       const t = await readTenant(id);
       if (!t) return send(res, 404, { error: "not_found" });
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
-      await fs.rm(tenantFile(id), { force: true });
+      // Unter Lock, damit ein paralleler Schreibvorgang (z. B. PUT /doc) die Datei
+      // nicht direkt nach dem Löschen neu anlegt ("Wiederauferstehung").
+      await withLock(id, async () => { await fs.rm(tenantFile(id), { force: true }); });
       return send(res, 200, { ok: true, deleted: id });
     }
 
@@ -1266,6 +1282,8 @@ const server = http.createServer(async (req, res) => {
 
     return send(res, 404, { error: "not_found" });
   } catch (e) {
+    // Unerwarteter Fehler: serverseitig loggen (Diagnose im Betrieb), Client bekommt klaren 500.
+    console.error("[hub] unhandled request error:", req.method, req.url, e && e.stack ? e.stack : e);
     return send(res, 500, { error: "server_error" });
   }
 });

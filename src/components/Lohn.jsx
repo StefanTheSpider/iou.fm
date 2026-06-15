@@ -104,7 +104,9 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
   async function applyFix(id) {
     const r = rows.find((x) => x.id === id);
     if (!r) return;
-    const info = await inspectIban(r._editIban ?? r.iban, { online: false });
+    let info;
+    try { info = await inspectIban(r._editIban ?? r.iban, { online: false }); }
+    catch { setRows((prev) => prev.map((x) => x.id === id ? { ...x, ibanValid: false, ibanReason: "IBAN-Prüfung fehlgeschlagen – bitte erneut versuchen." } : x)); return; }
     setRows((prev) => prev.map((x) => x.id === id ? {
       ...x, iban: info.iban, ibanValid: info.ok, ibanReason: info.reason || "",
       bic: info.bic || x.bic, isGf: gfIbans.includes(info.iban), _editIban: undefined,

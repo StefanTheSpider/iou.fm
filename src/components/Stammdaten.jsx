@@ -94,8 +94,10 @@ function Suppliers({ data, updateData }) {
 
   async function add(e) {
     e.preventDefault();
-    const info = await iban.check(iban.value);
-    if (!info?.ok) return;
+    let info;
+    try { info = await iban.check(iban.value); }
+    catch { iban.setInfo({ ok: false, reason: "IBAN-Prüfung fehlgeschlagen – bitte erneut versuchen." }); return; }
+    if (!info?.ok) { if (!iban.value.trim()) iban.setInfo({ ok: false, reason: "Bitte IBAN eingeben." }); return; } // Grund wird am IBAN-Feld angezeigt
     updateData((d) => ({
       ...d,
       suppliers: [...(d.suppliers || []), { id: crypto.randomUUID(), name: name.trim(), iban: info.iban, bic: info.bic || "", purpose: purpose.trim() }],
@@ -218,7 +220,7 @@ function Users({ auth }) {
                   <td>{u.username}{isSelf && <span className="muted"> · du</span>}</td>
                   <td>{u.role === "admin" ? "Admin" : "Mitarbeiter"}</td>
                   <td>{!isSelf && (
-                    <button className="btn danger small" onClick={() => auth.removeUser(u.username)}>Entfernen</button>
+                    <button className="btn danger small" disabled={busy} onClick={async () => { setError(""); setBusy(true); try { await auth.removeUser(u.username); } catch (err) { setError(err.message || "Entfernen fehlgeschlagen."); } finally { setBusy(false); } }}>Entfernen</button>
                   )}</td>
                 </tr>
               );
@@ -459,8 +461,10 @@ function Accounts({ data, updateData }) {
 
   async function add(e) {
     e.preventDefault();
-    const info = await iban.check(iban.value);
-    if (!info?.ok) return;
+    let info;
+    try { info = await iban.check(iban.value); }
+    catch { iban.setInfo({ ok: false, reason: "IBAN-Prüfung fehlgeschlagen – bitte erneut versuchen." }); return; }
+    if (!info?.ok) return; // Grund wird über das IBAN-Feld angezeigt
     const acc = {
       id: crypto.randomUUID(),
       label: label.trim() || name.trim(),
@@ -474,7 +478,7 @@ function Accounts({ data, updateData }) {
   }
 
   function remove(id) {
-    updateData((d) => ({ ...d, accounts: d.accounts.filter((a) => a.id !== id) }));
+    updateData((d) => ({ ...d, accounts: (d.accounts || []).filter((a) => a.id !== id) }));
   }
 
   const accounts = data.accounts || [];

@@ -21,7 +21,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  useEffect(() => { (async () => { try { setCfg(await inbox.get()); } catch { /* still */ } })(); }, [inbox]);
+  useEffect(() => { (async () => { try { setCfg(await inbox.get()); } catch (e) { setErr("Belege-Einstellungen konnten nicht geladen werden: " + (e.message || "")); } })(); }, [inbox]);
   if (!inbox) return null;
 
   const set = (patch) => setCfg((c) => ({ ...(c || {}), ...patch }));
@@ -40,7 +40,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
   }
   async function loadArchive() {
     setBusy("archive");
-    try { setBelege(await inbox.belege()); } catch { setBelege([]); } finally { setBusy(""); }
+    setErr(""); try { setBelege(await inbox.belege()); } catch (e) { setBelege([]); setErr("Archiv konnte nicht geladen werden: " + (e.message || "")); } finally { setBusy(""); }
   }
   async function refreshCfg() {
     setBusy("refresh"); setErr("");
@@ -73,8 +73,8 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
     return "📎 " + name.replace(/^[0-9a-f-]{36}_/i, "");
   }
   const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
-  function copyAddr() { try { navigator.clipboard.writeText(cfg.address); setMsg("Adresse kopiert."); } catch { /* egal */ } }
-  function copySender() { try { navigator.clipboard.writeText(cfg.senderEmail); setMsg("Absenderadresse kopiert."); } catch { /* egal */ } }
+  function copyAddr() { try { navigator.clipboard.writeText(cfg.address); setMsg("Adresse kopiert."); } catch { setErr("Kopieren nicht möglich – bitte die Adresse manuell markieren."); } }
+  function copySender() { try { navigator.clipboard.writeText(cfg.senderEmail); setMsg("Absenderadresse kopiert."); } catch { setErr("Kopieren nicht möglich – bitte die Adresse manuell markieren."); } }
   async function confirmDone() {
     setErr(""); setBusy("confirm");
     try { await inbox.clearConfirm(); set({ datevConfirmLink: "" }); setMsg("✓ DATEV-Absender freigegeben – alles erledigt."); }
@@ -90,7 +90,7 @@ export default function BelegePostfach({ inbox, data = null, updateData = null, 
         revisionssicher (mit Zeitstempel + Prüfsumme) archiviert.
       </p>
 
-      {!cfg ? <p className="note">Lädt …</p> : !cfg.available ? (
+      {!cfg ? (err ? <p className="error-text">{err} <button className="btn ghost small" onClick={refreshCfg}>Erneut versuchen</button></p> : <p className="note">Lädt …</p>) : !cfg.available ? (
         <p className="note" style={{ background: "rgba(201,162,75,.12)", border: "1px solid rgba(201,162,75,.4)", borderRadius: 8, padding: "10px 12px", color: "#e7c982" }}>
           🔧 Der E-Mail-Empfang ist serverseitig noch nicht eingerichtet (Inbound-Dienst fehlt). Adresse wird aktiv, sobald das steht.
         </p>

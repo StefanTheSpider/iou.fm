@@ -266,8 +266,13 @@ export async function removeUser(session, username) {
   const r = await postJson("/api/auth/users/delete", {
     adminUsername: session.currentUser.username, adminAuthHash: session.authHash, username,
   }, session.accessKey);
-  if (r.status === 400) throw new Error("Sich selbst kann man nicht entfernen.");
-  if (!r.ok) throw new Error("Benutzer konnte nicht entfernt werden.");
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    if (j.error === "cannot_remove_self") throw new Error("Sich selbst kann man nicht entfernen.");
+    if (j.error === "last_admin") throw new Error("Der letzte Admin kann nicht entfernt werden – lege erst einen weiteren Admin an.");
+    if (j.error === "not_admin") throw new Error("Nur Admins dürfen Benutzer entfernen.");
+    throw new Error("Benutzer konnte nicht entfernt werden.");
+  }
   return fetchUsers(session);
 }
 
