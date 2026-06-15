@@ -8,9 +8,10 @@ const deDate = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—
 // Historie aller erzeugten SEPA-Dateien (Löhne, Erstattungen, Sammelüberweisung)
 // mit Filtern + Export für die Buchhaltung (DATEV / CSV). Mitarbeiter sehen nur,
 // was wann überwiesen wurde; Export & erneuter Download sind Admin-Aktionen.
-export default function Archiv({ data, canPay = false }) {
+export default function Archiv({ data, canPay = false, onSendRechnungBelege = null }) {
   // Löhne tauchen NIE im Archiv auf – für niemanden (auch nicht für Admins).
-  const batches = (data.batches || []).filter((b) => b.kind !== "lohn");
+  // Rechnungen sieht nur der Admin (canPay), nicht normale Mitarbeiter.
+  const batches = (data.batches || []).filter((b) => b.kind !== "lohn" && (canPay || b.kind !== "rechnung"));
   const [fType, setFType] = useState("alle");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -18,10 +19,18 @@ export default function Archiv({ data, canPay = false }) {
   const [q, setQ] = useState("");
   const [openId, setOpenId] = useState(null);
   const [dl, setDl] = useState("");
+  const [sendBusy, setSendBusy] = useState("");
   function reDownload(b) {
     downloadXml(b.xml, b.filename);
     setDl(`✓ „${b.filename}" wurde gespeichert (Ordner „Downloads").`);
     setTimeout(() => setDl(""), 4000);
+  }
+  async function resendBelege(b) {
+    if (!onSendRechnungBelege) return;
+    setSendBusy(b.id); setDl("");
+    try { const res = await onSendRechnungBelege(b.id); setDl(`✓ ${res?.sent || ""} Beleg(e) aus „${b.filename}" an DATEV/Steuerberater gesendet.`); }
+    catch (e) { setDl("⚠️ " + (e.message || "Versand fehlgeschlagen.")); }
+    finally { setSendBusy(""); setTimeout(() => setDl(""), 6000); }
   }
 
   const accountList = useMemo(() => [...new Set(batches.map((b) => b.accountLabel).filter(Boolean))], [batches]);
@@ -53,7 +62,7 @@ export default function Archiv({ data, canPay = false }) {
               <option value="alle">alle</option>
               <option value="erstattung">Erstattungen</option>
               <option value="sammel">Sammelüberweisung</option>
-              <option value="rechnung">Rechnungen</option>
+              {canPay && <option value="rechnung">Rechnungen</option>}
             </select>
           </label>
           <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>von
@@ -100,7 +109,10 @@ export default function Archiv({ data, canPay = false }) {
                   <td>{b.accountLabel}</td><td>{b.count}</td>
                   <td className="amount">{formatEur(b.sumCents)}</td>
                   <td className="muted">{b.filename}</td>
-                  <td>{canPay && b.xml && <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); reDownload(b); }}>erneut laden</button>}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {canPay && b.xml && <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); reDownload(b); }}>erneut laden</button>}
+                    {canPay && b.kind === "rechnung" && onSendRechnungBelege && <button className="btn ghost small" style={{ marginLeft: 6 }} disabled={sendBusy === b.id} onClick={(e) => { e.stopPropagation(); resendBelege(b); }}>{sendBusy === b.id ? "Sende…" : "An DATEV senden"}</button>}
+                  </td>
                 </tr>
                 {openId === b.id && (b.payments || []).map((p, i) => (
                   <tr key={b.id + "-" + i} style={{ background: "var(--bg)" }}>

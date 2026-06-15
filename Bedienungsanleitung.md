@@ -67,9 +67,11 @@ Tipp: Über das **Suchfeld** (Bestellnummer oder Name) findest du einen Eintrag 
 
 ## 5 · Lieferantenrechnungen zahlen
 
-1. Tab **Rechnungen** öffnen, PDFs laden (E-Rechnung exakt, sonst Mustererkennung).
+1. Tab **Rechnungen** öffnen, PDFs laden (E-Rechnung exakt, sonst Mustererkennung; gescannte PDFs werden per Texterkennung gelesen).
 2. Lieferanten-Gedächtnis füllt bekannte IBANs automatisch.
-3. Prüfen → als Admin SEPA-Datei erstellen.
+3. Prüfen → als Admin SEPA-Datei erstellen. Im **Bank-Tarif** kannst du danach direkt **„Per EBICS an Bank senden"** – die Belege gehen dann automatisch an DATEV/Steuerberater.
+4. **Schon bezahlt?** Erscheint die Warnung, kannst du die Rechnung mit **„Nur an DATEV weiterleiten (nicht zahlen)"** trotzdem in die Buchhaltung geben, ohne sie erneut zu überweisen.
+5. **Später erneut senden:** Im **Archiv** (nur Admin) hat jeder Rechnungs-Lauf den Button **„An DATEV senden"** – auch Tage später und geräteübergreifend.
 
 **Belege automatisch an Steuerberater/DATEV:** In den Stammdaten beim Modul „Rechnungen" die Option „Belege automatisch versenden" aktivieren und deine Steuerberater-E-Mail (und/oder die DATEV-Beleg-E-Mail aus „Unternehmen online") eintragen. Sobald du die SEPA-Datei erstellst, gehen die geprüften Rechnungs-PDFs automatisch per Mail dorthin – bei DATEV landen sie direkt in Unternehmen online. Du musst nur die E-Mail eintragen.
 

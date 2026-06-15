@@ -14,7 +14,7 @@ async function httpPost(url, body, headers = {}) {
 // Sendet den fertigen pain.001 direkt per EBICS an die Bank. Wird nur angezeigt, wenn die
 // Bankanbindung aktiviert UND von der Bank freigeschaltet ist. Andernfalls bleibt der
 // gewohnte Datei-Download der einzige Weg.
-export default function EbicsSendButton({ data, xml, meta = {}, style, allowed = true }) {
+export default function EbicsSendButton({ data, xml, meta = {}, style, allowed = true, onSent = null }) {
   const cfg = data?.config?.ebics || {};
   const keys = data?.ebicsKeys || null;
   const [busy, setBusy] = useState(false);
@@ -30,6 +30,7 @@ export default function EbicsSendButton({ data, xml, meta = {}, style, allowed =
       const client = createEbicsClient({ cfg, keys, httpPost });
       const r = await client.uploadPayment(xml, meta);
       setMsg(`An die Bank übergeben (Auftrag ${r?.orderId || "—"}). Bitte in der TAN-/Banking-App deiner Bank freigeben.`);
+      if (onSent) { try { await onSent(r); } catch { /* Folgeaktion (z. B. Beleg-Forward) nicht kritisch */ } }
     } catch (e) {
       setErr(e.message || "EBICS-Versand fehlgeschlagen.");
     } finally { setBusy(false); }

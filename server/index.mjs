@@ -615,6 +615,56 @@ const server = http.createServer(async (req, res) => {
       } catch (e) { return send(res, 502, { error: "mail_failed", detail: e.message }); }
     }
 
+    // POST /api/tenants/:id/rechnung-belege/:batchId – Rechnungs-PDFs eines SEPA-Laufs ablegen
+    // (dauerhaft, damit man sie später erneut an DATEV senden kann – auch geräteübergreifend).
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "rechnung-belege" && parts[4] && parts.length === 5 && req.method === "POST") {
+      const id = parts[2]; const batchId = parts[4];
+      if (!validId(id) || !validId(batchId)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      const b = await body(req); if (b.__err) return send(res, 400, { error: b.__err });
+      const files = (Array.isArray(b.files) ? b.files : []).filter((f) => f && f.filename && f.content).slice(0, 50);
+      if (!files.length) return send(res, 400, { error: "no_files" });
+      const dir = path.join(DATA_DIR, "rechnungsbelege", id, batchId);
+      await fs.mkdir(dir, { recursive: true });
+      let saved = 0;
+      for (const f of files) {
+        try { await fs.writeFile(path.join(dir, safeName(f.filename)), Buffer.from(String(f.content), "base64")); saved++; } catch { /* egal */ }
+      }
+      return send(res, 200, { ok: true, saved });
+    }
+
+    // POST /api/tenants/:id/rechnung-belege/:batchId/send – abgelegte Rechnungs-Belege an Steuerberater/DATEV senden.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "rechnung-belege" && parts[4] && parts[5] === "send" && req.method === "POST") {
+      const id = parts[2]; const batchId = parts[4];
+      if (!validId(id) || !validId(batchId)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      if (!RESEND_API_KEY) return send(res, 503, { error: "mail_not_configured" });
+      const to = [t.inbox?.belegEmail, t.inbox?.datevEmail].map((x) => String(x || "").trim()).filter(Boolean);
+      if (!to.length) return send(res, 400, { error: "no_recipient" });
+      const dir = path.join(DATA_DIR, "rechnungsbelege", id, batchId);
+      let names = [];
+      try { names = await fs.readdir(dir); } catch { /* keine Ablage */ }
+      if (!names.length) return send(res, 400, { error: "no_files" });
+      const attachments = [];
+      for (const n of names) {
+        try { const buf = await fs.readFile(path.join(dir, n)); attachments.push({ filename: n, content: buf.toString("base64") }); } catch { /* egal */ }
+      }
+      if (!t.senderToken) { t.senderToken = newInboxToken(); await writeTenant(t); }
+      try {
+        await sendAttachmentsViaResend({
+          apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to,
+          subject: `Rechnungsbelege – ${t.company || "iou.fm"}`,
+          text: `Anbei ${attachments.length} Rechnungsbeleg(e) aus iou.fm.`,
+          attachments,
+        });
+        return send(res, 200, { ok: true, sent: attachments.length, to });
+      } catch (e) { return send(res, 502, { error: "mail_failed", detail: e.message }); }
+    }
+
     // ===== BELEGE PER E-MAIL (Inbox + Archiv + Weiterleitung) ================
     // GET /api/tenants/:id/inbox – Weiterleitungs-Adresse + Forward-Konfig (erzeugt Token).
     if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "inbox" && req.method === "GET") {

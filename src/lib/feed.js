@@ -88,6 +88,29 @@ export async function sendInvoiceBelege(session, { to, files, subject, text }) {
   return j;
 }
 
+// Rechnungs-PDFs eines SEPA-Laufs dauerhaft im Hub ablegen (für späteres Re-Senden).
+export async function uploadRechnungBelege(session, batchId, files) {
+  if (!batchId || !Array.isArray(files) || !files.length) return { ok: false, saved: 0 };
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/rechnung-belege/${batchId}`), {
+    method: "POST", headers: { ...auth(session), "Content-Type": "application/json" }, body: JSON.stringify({ files }),
+  });
+  return r.ok ? r.json() : { ok: false, saved: 0 };
+}
+// Abgelegte Rechnungs-Belege eines Batches (erneut) an Steuerberater/DATEV senden.
+export async function sendRechnungBelege(session, batchId) {
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/rechnung-belege/${batchId}/send`), {
+    method: "POST", headers: { ...auth(session), "Content-Type": "application/json" }, body: "{}",
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (j.error === "mail_not_configured") throw new Error("E-Mail-Versand ist serverseitig nicht eingerichtet.");
+    if (j.error === "no_recipient") throw new Error("Keine Empfänger-E-Mail hinterlegt (Stammdaten → Belege & Buchhaltung).");
+    if (j.error === "no_files") throw new Error("Für diesen Lauf sind keine Belege gespeichert (vor diesem Update erstellt?).");
+    throw new Error(j.detail || `Versand fehlgeschlagen (${r.status}).`);
+  }
+  return j;
+}
+
 // Vom Cron gesammelte Stornos/Refunds/Anfragen.
 export async function getFeed(session) {
   if (!session?.tenantId) return null;

@@ -3,6 +3,7 @@ import { parseAmount, formatEur } from "../lib/money.js";
 import { validateIban, cleanIban, formatIban, inspectIban } from "../lib/iban.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import { extractInvoice } from "../lib/invoicePdf.js";
+import EbicsSendButton from "./EbicsSendButton.jsx";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const deDate = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—");
@@ -28,7 +29,7 @@ function bufToB64(buf) {
 
 // Rechnungs-Modul: PDFs einlesen -> Zahlungsdaten prüfen -> eine SEPA-Datei.
 // Standard ohne KI: E-Rechnung/Heuristik + Lieferanten-Gedächtnis + Review.
-export default function Rechnungen({ data, updateData, canPay = true, userName = "", onSendBelege = null }) {
+export default function Rechnungen({ data, updateData, canPay = true, userName = "", ebicsAllowed = false, onSendBelege = null, onUploadBelege = null, onSendRechnungBelege = null }) {
   const accounts = data.accounts || [];
   const rows = data.invoices || [];
   const creditors = data.creditors || {};          // IBAN -> { name, bic }
@@ -40,6 +41,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const [saved, setSaved] = useState("");
   const [belegMsg, setBelegMsg] = useState("");
   const [scan, setScan] = useState("");             // OCR-Fortschritt (gescannte PDFs)
+  const [lastSepa, setLastSepa] = useState(null);   // { xml, filename, batchId } – für EBICS-Versand
   const [showModal, setShowModal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const [warn, setWarn] = useState(null);           // Doppelzahlungs-Warnung
@@ -167,6 +169,26 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     }
   }
 
+  // „Schon bezahlt": nur an DATEV/Steuerberater weiterleiten (für die Buchhaltung),
+  // aber NICHT erneut zur Zahlung aufnehmen → Zeile abwählen, damit sie nicht in die SEPA-Datei kommt.
+  async function forwardOnlyToDatev(row) {
+    setWarn(null); setError("");
+    patchRow(row.id, { selected: false }); // sicher von der Zahlung ausschließen
+    if (!onSendBelege) { setBelegMsg("Beleg-Versand ist in dieser Ansicht nicht verfügbar."); return; }
+    const f = pdfStore.current.get(row.id);
+    if (!f) { setBelegMsg("PDF nicht mehr im Speicher – bitte die Rechnung in dieser Sitzung erneut laden und dann manuell an DATEV senden."); return; }
+    setBelegMsg("Sende an DATEV/Steuerberater (nicht zur Zahlung) …");
+    try {
+      const res = await onSendBelege({ files: [f], subject: `Beleg (bereits bezahlt): ${row.invoiceNumber || row.creditorName || row.fileName || ""}` });
+      setBelegMsg(`✓ ${res?.sent || 1} Beleg an DATEV/Steuerberater gesendet – nicht zur Zahlung hinzugefügt.`);
+    } catch (e) {
+      const m = e.message || "";
+      setBelegMsg(/Empfänger|recipient/i.test(m)
+        ? "Kein Empfänger hinterlegt – trage Steuerberater/DATEV unter Stammdaten → Belege & Buchhaltung ein."
+        : "Beleg-Versand fehlgeschlagen: " + m);
+    }
+  }
+
   // Geprüfte Rechnungs-PDFs an Steuerberater/DATEV mailen (optional, nach Zahlung).
   async function sendBelege(eligibleRows) {
     // Empfänger (Steuerberater/DATEV) sind zentral unter „Belege & Buchhaltung" gepflegt –
@@ -222,7 +244,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     }), true);
     setShowModal(false); setError(""); setBelegMsg("");
     setSaved(`✓ „${filename}" gespeichert (Ordner „Downloads"). ${payments.length} Rechnung${payments.length === 1 ? "" : "en"}, Summe ${formatEur(sumEligible)}. Liegt auch im Archiv.`);
+    setLastSepa({ xml, filename, batchId });
+
+    // PDFs dieses Laufs dauerhaft im Hub ablegen (für späteres Re-Senden / EBICS-Forward).
+    const belegeFiles = eligibleRows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
+    if (onUploadBelege && belegeFiles.length) { onUploadBelege(batchId, belegeFiles).catch(() => {}); }
+
     sendBelege(eligibleRows); // optional: Belege automatisch an Steuerberater/DATEV
+  }
+
+  // Nach erfolgreichem EBICS-Versand: Belege dieses Laufs automatisch an DATEV/Steuerberater.
+  async function onEbicsSent() {
+    if (!onSendRechnungBelege || !lastSepa?.batchId) return;
+    setBelegMsg("EBICS gesendet – leite Belege an DATEV/Steuerberater weiter …");
+    try { const res = await onSendRechnungBelege(lastSepa.batchId); setBelegMsg(`✓ Per EBICS gesendet und ${res?.sent || ""} Beleg(e) an DATEV/Steuerberater weitergeleitet.`); }
+    catch (e) { setBelegMsg("Per EBICS gesendet. Beleg-Weiterleitung fehlgeschlagen: " + (e.message || "")); }
   }
 
   return (
@@ -252,6 +288,16 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           ? <button className="btn" disabled={!eligible.length} onClick={() => setShowModal(true)}>SEPA-Datei erstellen ({eligible.length})</button>
           : <span className="note" style={{ alignSelf: "center" }}>Nur Admins erstellen die SEPA-Datei (Vier-Augen-Prinzip).</span>}
       </div>
+
+      {canPay && lastSepa && (
+        <div className="card" style={{ marginTop: 0 }}>
+          <p className="note" style={{ marginTop: 0 }}>Letzte erstellte Datei: <strong>{lastSepa.filename}</strong>. Du kannst sie erneut herunterladen oder – im Bank-Tarif – direkt per EBICS senden. Nach EBICS-Versand gehen die Belege automatisch an DATEV/Steuerberater.</p>
+          <div className="toolbar" style={{ marginBottom: 0, marginTop: 0 }}>
+            <button className="btn ghost" onClick={() => downloadXml(lastSepa.xml, lastSepa.filename)}>SEPA-Datei erneut herunterladen</button>
+            <EbicsSendButton data={data} xml={lastSepa.xml} meta={{ kind: "rechnung", filename: lastSepa.filename }} allowed={ebicsAllowed} onSent={onEbicsSent} />
+          </div>
+        </div>
+      )}
 
       <div className="toolbar">
         <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Status
@@ -301,7 +347,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
       {showModal && <SepaModal accounts={accounts} count={eligible.length} sumCents={sumEligible} defaultDate={defaultExecDate()} onClose={() => setShowModal(false)} onCreate={createSepa} />}
       {confirmDel && <ConfirmModal name={(rows.find((x) => x.id === confirmDel)?.creditorName) || "diese Rechnung"} onCancel={() => setConfirmDel(null)} onConfirm={() => removeRow(confirmDel)} />}
-      {warn && <DuplicateModal row={warn.row} reason={warn.reason} onClose={() => setWarn(null)} onRemove={() => { removeRow(warn.row.id); setWarn(null); }} />}
+      {warn && <DuplicateModal row={warn.row} reason={warn.reason} onClose={() => setWarn(null)} onRemove={() => { removeRow(warn.row.id); setWarn(null); }} onForwardOnly={onSendBelege ? () => forwardOnlyToDatev(warn.row) : null} />}
     </div>
   );
 }
@@ -345,7 +391,7 @@ function ConfirmModal({ name, onCancel, onConfirm }) {
   );
 }
 
-function DuplicateModal({ row, reason = "paid", onClose, onRemove }) {
+function DuplicateModal({ row, reason = "paid", onClose, onRemove, onForwardOnly }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onClose}>
       <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f" }} onClick={(e) => e.stopPropagation()}>
@@ -356,10 +402,12 @@ function DuplicateModal({ row, reason = "paid", onClose, onRemove }) {
           : reason === "paidPair"
           ? <p style={{ fontSize: 15 }}>Es gibt bereits eine Zahlung an <strong>{row.creditorName}</strong> über <strong>{row.amount} €</strong> in einer früheren SEPA-Datei (gleicher Lieferant + Betrag, evtl. ohne Rechnungsnummer). Erneut zahlen = <strong>Doppelzahlung</strong>.</p>
           : <p style={{ fontSize: 15 }}>Rechnungsnummer <strong>{row.invoiceNumber}</strong>{row.creditorName ? <> ({row.creditorName})</> : ""} taucht bereits in einer früheren SEPA-Datei auf. Erneut zahlen = <strong>Doppelzahlung</strong>.</p>}
-        <p className="note" style={{ fontSize: 14 }}>Du kannst sie trotzdem in der Liste lassen (z. B. Teilzahlung/Korrektur) oder direkt entfernen.</p>
+        <p className="note" style={{ fontSize: 14 }}>Auch eine bereits bezahlte Rechnung gehört in die Buchhaltung. Du kannst sie deshalb <strong>nur an DATEV/Steuerberater weiterleiten</strong> – sie wird dann <strong>nicht</strong> erneut zur Zahlung hinzugefügt.</p>
         <div className="toolbar" style={{ marginBottom: 0, marginTop: 8 }}>
-          <button className="btn danger" onClick={onRemove}>Entfernen</button><div className="spacer" />
-          <button className="btn" onClick={onClose}>In Liste behalten</button>
+          <button className="btn danger" onClick={onRemove}>Entfernen</button>
+          <div className="spacer" />
+          {onForwardOnly && <button className="btn" onClick={onForwardOnly}>Nur an DATEV weiterleiten (nicht zahlen)</button>}
+          <button className="btn ghost" onClick={onClose}>In Liste behalten</button>
         </div>
       </div>
     </div>
