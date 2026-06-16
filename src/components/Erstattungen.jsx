@@ -282,12 +282,20 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         {visible.map(({ r, refund, isEur, sepaMode, sepaEligible }) => {
           const ibanLen = (r.iban || "").replace(/[^0-9A-Za-z]/g, "").length;
           const showInvalid = sepaMode && !r.ibanValid && ibanLen >= 15;
+          // Warum ist dieser offene Eintrag (noch) nicht für die SEPA-Datei auswählbar?
+          let blockReason = "";
+          if (sepaMode && r.status === "offen" && !sepaEligible) {
+            if (!isEur) blockReason = `${r.currency} – kein SEPA`;
+            else if (!r.ibanValid) blockReason = ibanLen >= 15 ? "IBAN ungültig" : "IBAN fehlt";
+            else if (!refund.valid) blockReason = "Betrag fehlt";
+          }
           return (
             <div key={r.id} className={`refund-card ${showInvalid ? "invalid" : ""} ${r.status === "erledigt" ? "done" : ""}`}>
               <div className="refund-head">
                 {sepaMode && r.status === "offen" && (
                   <input type="checkbox" disabled={!sepaEligible} checked={!!(sepaEligible && r.selected !== false)}
-                    onChange={(e) => patchRow(r.id, { selected: e.target.checked })} title="in SEPA-Datei aufnehmen" />
+                    onChange={(e) => patchRow(r.id, { selected: e.target.checked })}
+                    title={sepaEligible ? "in SEPA-Datei aufnehmen" : `Noch nicht auswählbar – ${blockReason || "Angaben unvollständig"}`} />
                 )}
                 <div className="who-wrap">
                   <input className="who-input" value={r.customerName} placeholder={isErstattung ? "Name / Kontoinhaber" : "Empfänger"}
@@ -314,6 +322,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                 ) : sepaMode ? (
                   <div className="inline-edit">
                     <span className="pill warn">offen</span>
+                    {blockReason && <span className="pill bad" title="Bitte ergänzen – danach lässt sich der Haken setzen">⚠ {blockReason}</span>}
                     {r.refundViaSepa && r.method !== "ueberweisung" && (
                       <button className="btn ghost small" title="Doch nicht per Überweisung erstatten" onClick={() => patchRow(r.id, { refundViaSepa: false, selected: false })}>↩︎</button>
                     )}

@@ -17,6 +17,7 @@ export default function Rechnungspruefung({ data, updateData }) {
   const [paste, setPaste] = useState("");
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   function pickSupplier(id) {
     setSupplierId(id);
@@ -41,7 +42,9 @@ export default function Rechnungspruefung({ data, updateData }) {
   const totals = invoiceTotals(lines);
 
   async function toPayout() {
-    setError(""); setInfo("");
+    if (busy) return;                       // Doppelklick-Schutz: keine doppelte Zeile
+    setError(""); setInfo(""); setBusy(true);
+    try {
     const ibInfo = ibanInfo?.ok ? ibanInfo : await checkIban(ibanVal);
     if (!name.trim()) return setError("Bitte Lieferant/Empfänger angeben.");
     if (!ibInfo?.ok) return setError("Bitte gültige IBAN des Lieferanten angeben.");
@@ -59,6 +62,11 @@ export default function Rechnungspruefung({ data, updateData }) {
     updateData((d) => ({ ...d, refunds: [row, ...(d.refunds || [])] }));
     setInfo(`Übernommen: ${formatEur(totals.approvedCents)} für ${name.trim()} → im Sammelüberweisungs-/Erstattungs-Tab zur Auszahlung bereit.`);
     setInvNr(""); setLines([emptyLine()]);
+    } catch (e) {
+      setError(e?.message || "Übernahme fehlgeschlagen – bitte erneut versuchen.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -130,7 +138,7 @@ export default function Rechnungspruefung({ data, updateData }) {
         <div className="stat"><div className="num" style={{ color: "var(--accent)" }}>{formatEur(totals.approvedCents)}</div><div className="lbl">freigegeben</div></div>
         {totals.diffCents > 0 && <div className="stat"><div className="num" style={{ color: "var(--amber)" }}>−{formatEur(totals.diffCents)}</div><div className="lbl">gekürzt/abgelehnt</div></div>}
         <div className="spacer" style={{ flex: 1 }} />
-        <button className="btn" onClick={toPayout} style={{ alignSelf: "center" }}>In Sammelüberweisung übernehmen</button>
+        <button className="btn" onClick={toPayout} disabled={busy} style={{ alignSelf: "center" }}>{busy ? "Übernehme…" : "In Sammelüberweisung übernehmen"}</button>
       </div>
 
       {error && <p className="error-text">{error}</p>}

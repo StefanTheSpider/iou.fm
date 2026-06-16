@@ -271,11 +271,19 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
             {rows.map((r) => {
               const canSelect = selectable(r);
               const held = holdGf && r.isGf;
+              // Warum lässt sich diese Zeile nicht auswählen? (sonst toter Haken ohne Hinweis)
+              let lohnBlock = "";
+              if (!canSelect) {
+                if (held) lohnBlock = "GF zurückgehalten";
+                else if (!r.ibanValid) lohnBlock = "IBAN ungültig";
+                else if (!r.amount.valid) lohnBlock = r.amount.currency !== "EUR" ? `${r.amount.currency} – kein SEPA` : "Betrag fehlt";
+              }
               return (
                 <tr key={r.id} className={`${!r.ibanValid ? "invalid" : ""} ${held ? "held" : ""}`}>
                   <td className="checkbox-cell">
                     <input type="checkbox" disabled={!canSelect}
-                      checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+                      checked={selected.has(r.id)} onChange={() => toggle(r.id)}
+                      title={canSelect ? "in SEPA-Datei aufnehmen" : `Nicht auswählbar – ${lohnBlock || "Angaben unvollständig"}`} />
                   </td>
                   <td>
                     {r.displayName}{" "}
@@ -297,6 +305,7 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
                     {r.ibanValid
                       ? <span className="pill ok">🟢 gültig</span>
                       : <span className="pill bad">🔴 {r.ibanReason} – fragen</span>}
+                    {r.ibanValid && !canSelect && lohnBlock && <span className="pill bad" title="Nicht auswählbar – bitte korrigieren">⚠ {lohnBlock}</span>}
                   </td>
                   <td className="amount">
                     {r.amount.currency !== "EUR"

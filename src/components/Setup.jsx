@@ -14,14 +14,19 @@ export default function Setup({ data, updateData, onComplete }) {
 
   async function checkIban(v) {
     if (!v.trim()) { setIbanInfo(null); return null; }
-    const r = await inspectIban(v, { online: false });
-    setIbanInfo(r); return r;
+    try {
+      const r = await inspectIban(v, { online: false });
+      setIbanInfo(r); return r;
+    } catch {
+      const r = { ok: false, reason: "IBAN-Prüfung fehlgeschlagen – bitte erneut versuchen." };
+      setIbanInfo(r); return r;
+    }
   }
 
   async function addAccount(e) {
     e.preventDefault();
     const info = await checkIban(ibanVal);
-    if (!info?.ok) { setError("Bitte eine gültige IBAN eingeben."); return; }
+    if (!info?.ok) { setError(info?.reason || "Bitte eine gültige IBAN eingeben."); return; }
     updateData((d) => ({
       ...d,
       accounts: [...(d.accounts || []), {
@@ -89,6 +94,7 @@ export default function Setup({ data, updateData, onComplete }) {
 
       {error && <p className="error-text">{error}</p>}
       <div className="toolbar">
+        {accounts.length === 0 && <span className="note" style={{ margin: 0 }}>Lege zuerst oben mindestens ein Auftraggeberkonto an, dann geht es weiter.</span>}
         <div className="spacer" />
         <button className="btn" onClick={finish} disabled={accounts.length === 0}>Einrichtung abschließen →</button>
       </div>
