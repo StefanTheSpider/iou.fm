@@ -4,7 +4,7 @@ import BRANDING from "../branding.js";
 
 // Login ist der primäre Screen: von jedem Gerät nur mit Benutzername + Passwort.
 // „Neue Firma einrichten" (Admin-Registrierung) ist die sekundäre Option.
-export default function LockScreen({ onUnlock, branding = BRANDING }) {
+export default function LockScreen({ onUnlock, branding = BRANDING, update = null, updReady = true, onUpdate = null }) {
   const [mode, setMode] = useState("login"); // "login" | "register"
   const [company, setCompany] = useState("");
   const [username, setUsername] = useState("");
@@ -14,17 +14,29 @@ export default function LockScreen({ onUnlock, branding = BRANDING }) {
   const [busy, setBusy] = useState(false);
   const [bioUser, setBioUser] = useState("");   // eingerichteter Touch-ID/Hello-Benutzer
   const autoTried = useRef(false);              // Auto-Prompt nur einmal pro Screen
+  const updTried = useRef(false);               // Auto-Update nur einmal pro Screen
+  const [updFailed, setUpdFailed] = useState(false); // Auto-Update fehlgeschlagen → normaler Login
   const isRegister = mode === "register";
 
+  // Erst wenn die Update-Prüfung durch ist (updReady):
+  //  – ist eine neue Version da → automatisch aktualisieren (Loader, dann Neustart),
+  //  – sonst → Touch ID sofort auslösen (Finger drauflegen genügt, kein Klick).
   useEffect(() => {
+    if (!updReady) return;
+    if (update && onUpdate && !updTried.current && !updFailed) {
+      updTried.current = true;
+      onUpdate().catch(() => setUpdFailed(true)); // Fehler → unten normaler Login als Fallback
+      return;
+    }
     (async () => {
-      if (await bioAvailable() && bioEnabledUser()) {
+      if (!update && await bioAvailable() && bioEnabledUser()) {
         setBioUser(bioEnabledUser());
-        // Touch ID sofort beim Öffnen auslösen – Finger drauflegen genügt, kein Klick nötig.
         if (!autoTried.current) { autoTried.current = true; bioLogin(); }
+      } else if (await bioAvailable() && bioEnabledUser()) {
+        setBioUser(bioEnabledUser()); // Button anzeigen, aber bei vorhandenem Update nicht auto-auslösen
       }
     })();
-  }, []);
+  }, [updReady, update]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function bioLogin() {
     setError(""); setBusy(true);
@@ -70,6 +82,19 @@ export default function LockScreen({ onUnlock, branding = BRANDING }) {
         <p className="muted" style={{ marginTop: 0 }}>
           {isRegister ? "Neue Firma einrichten – Admin-Konto anlegen" : "Anmelden"}
         </p>
+
+        {update && !updFailed && (
+          <div className="note" style={{ margin: "0 0 8px", padding: "10px 12px", borderRadius: 10,
+            background: "var(--accent-ink)", color: "var(--accent)", fontWeight: 600 }}>
+            🔄 Neue Version {update.version} wird installiert – einen Moment bitte. Danach startet die App neu.
+          </div>
+        )}
+        {update && updFailed && (
+          <div className="note" style={{ margin: "0 0 8px", padding: "10px 12px", borderRadius: 10,
+            background: "var(--red-bg)", color: "var(--red)", fontWeight: 600 }}>
+            Update fehlgeschlagen – du kannst dich normal anmelden und es später über das Banner erneut versuchen.
+          </div>
+        )}
 
         {!isRegister && bioUser && (
           <>

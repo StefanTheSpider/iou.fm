@@ -37,6 +37,7 @@ export default function App() {
   const [dirtyCount, setDirtyCount] = useState(0); // Anzahl ungespeicherter Änderungen (für den Button-Text)
   const [saved, setSaved] = useState(false);
   const [update, setUpdate] = useState(null); // { version, notes, install }
+  const [updChecked, setUpdChecked] = useState(false); // Update-Prüfung abgeschlossen (für Lock-Screen-Auto-Login)
   const [updating, setUpdating] = useState(false);
   const [updErr, setUpdErr] = useState("");
   const [saveErr, setSaveErr] = useState(""); // sichtbarer Hinweis, falls lokales Speichern fehlschlägt
@@ -101,7 +102,25 @@ export default function App() {
   }, [session, tab]);
 
   // Beim Start auf neue Version prüfen (nur Desktop-App; sonst still).
-  useEffect(() => { checkForUpdate().then((u) => { if (u) setUpdate(u); }); }, []);
+  // Den Lock-Screen-Auto-Login (Biometrie) erst nach dieser Prüfung auslösen, damit
+  // ein vorhandenes Update VOR dem Anmelden installiert werden kann (kein doppeltes Login).
+  // Spätestens nach 6 s freigeben, falls die Prüfung hängt (offline).
+  useEffect(() => {
+    const t = setTimeout(() => setUpdChecked(true), 6000);
+    checkForUpdate()
+      .then((u) => { if (u) setUpdate(u); })
+      .finally(() => { clearTimeout(t); setUpdChecked(true); });
+    return () => clearTimeout(t);
+  }, []);
+
+  // Zentrale Update-Installation: lädt + installiert und startet die App neu (kehrt bei
+  // Erfolg nicht zurück). Bei Fehler Loader aus + Meldung, damit man normal weiterarbeiten kann.
+  const runUpdate = useCallback(async () => {
+    if (!update) return;
+    setUpdErr(""); setUpdating(true);
+    try { await update.install(); }
+    catch (e) { setUpdating(false); setUpdErr(e.message || String(e)); throw e; }
+  }, [update]);
 
   useEffect(() => {
     restoreSession().then((s) => {
@@ -346,22 +365,30 @@ export default function App() {
 
   const UpdateBanner = () => update ? (
     <div className="update-banner">
-      <span>Neue Version <strong>{update.version}</strong> verfügbar.</span>
-      <button className="btn small" disabled={updating} onClick={async () => {
-        setUpdErr(""); setUpdating(true);
-        try { await update.install(); }
-        catch (e) { setUpdating(false); setUpdErr(e.message || String(e)); }
-      }}>{updating ? "Installiere…" : "Jetzt aktualisieren & neu starten"}</button>
+      <span>🔄 Neue Version <strong>{update.version}</strong> verfügbar.</span>
+      <button className="btn small" disabled={updating} onClick={() => { runUpdate().catch(() => {}); }}>
+        {updating ? "Installiere…" : "Jetzt aktualisieren"}
+      </button>
       <button className="link-btn" onClick={() => setUpdate(null)}>später</button>
       {updErr && <span style={{ opacity: 0.85 }}>· Fehler: {updErr}</span>}
     </div>
   ) : null;
 
+  // Vollbild-Loader während der Aktualisierung (Download/Installation/Neustart).
+  const UpdatingOverlay = () => updating ? (
+    <div className="update-overlay">
+      <div className="spinner" />
+      <div className="update-overlay-text">Einen Moment bitte – die App wird auf den neuesten Stand gebracht…</div>
+      <div className="update-overlay-sub">Die App startet gleich automatisch neu.</div>
+    </div>
+  ) : null;
+
   if (restoring) {
-    return <div className="lock-screen"><div className="muted">Wird entsperrt…</div></div>;
+    return <><UpdatingOverlay /><div className="lock-screen"><div className="muted">Wird entsperrt…</div></div></>;
   }
   if (!session) {
-    return <><UpdateBanner /><LockScreen onUnlock={onUnlock} branding={branding} /></>;
+    return <><UpdatingOverlay /><UpdateBanner />
+      <LockScreen update={update} updReady={updChecked} onUpdate={runUpdate} onUnlock={onUnlock} branding={branding} /></>;
   }
 
   // Vendor-Owner: NUR das per OWNER_ID freigeschaltete Anbieter-Konto (nicht jeder Mandanten-
@@ -385,6 +412,7 @@ export default function App() {
   if (billingBlocked || (showPaywall && !inSupport)) {
     return (
       <>
+        <UpdatingOverlay />
         <UpdateBanner />
         <Paywall
           license={license}
@@ -407,6 +435,7 @@ export default function App() {
   return (
     <div className="app">
       <Toaster />
+      <UpdatingOverlay />
       <UpdateBanner />
       {saveErr && (
         <div className="owner-banner" style={{ background: "rgba(255,107,107,.14)", borderColor: "rgba(255,107,107,.6)", color: "#ffb3b3" }}>

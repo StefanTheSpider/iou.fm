@@ -137,7 +137,7 @@ Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als D
 
 - **Bestimmte Bank nötig?** Nein – jede SEPA-fähige Bank. Direktversand braucht EBICS (Bank-Tarif).
 - **App startet am Mac nicht?** Erststart per Rechtsklick → „Öffnen".
-- **Updates?** Automatisch.
+- **Updates?** Automatisch: Ist beim Anmelden eine neue Version da, installiert sie sich selbst (kurzer Lade-Hinweis), danach Neustart – einfach wieder per Touch ID anmelden. Schon eingeloggt? Dann erscheint oben der Button „Jetzt aktualisieren".
 - **Sieht der Steuerberater alles?** Nein, nur die gesendete CSV.
 - **Mehrere Personen gleichzeitig?** Ja – außer Gehälter (bleiben lokal).
 - **Passwort vergessen?** Nicht wiederherstellbar – sicher aufbewahren.
