@@ -49,8 +49,9 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
     try {
       if (!keys) throw new Error("Bitte zuerst die Schlüssel erzeugen.");
       openIniLetter(cfg, keys);
+      setMsg("INI-Brief erstellt. Liegt im Ordner Downloads bzw. im neuen Fenster – dort öffnen, drucken, unterschreiben und an die Bank senden.");
       if (status === EBICS_STATUS.KEYS_GENERATED) setCfg({ status: EBICS_STATUS.INI_SENT });
-    } catch (e) { setErr(e.message || "INI-Brief konnte nicht geöffnet werden."); }
+    } catch (e) { setErr(e.message || "INI-Brief konnte nicht erstellt werden."); }
   }
 
   function markActive(on) {

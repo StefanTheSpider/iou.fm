@@ -8,11 +8,7 @@ import BillingSettings from "./BillingSettings.jsx";
 import OwnerCustomers from "./OwnerCustomers.jsx";
 import BelegePostfach from "./BelegePostfach.jsx";
 
-// URL im System-Browser öffnen (Tauri), im Browser-Dev als neuer Tab.
-async function openExternal(url) {
-  try { await invoke("open_external", { url }); }
-  catch { window.open(url, "_blank", "noopener"); }
-}
+import { openExternal } from "../lib/openExternal.js";
 
 function IbanStatus({ info }) {
   if (!info) return null;

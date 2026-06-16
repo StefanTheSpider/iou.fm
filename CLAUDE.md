@@ -19,6 +19,19 @@ Versionsnummern nie raten. Höchsten Git-Tag lesen und per `release.sh` automati
 ## REGEL 3 — Keine Commits ohne Aufforderung
 Dateien ändern ist ok; Git (commit/push/Release) macht der User bzw. `release.sh`.
 
+## REGEL 4 — Tauri-Fenster blockiert window.open & target="_blank"
+Im gebauten App-Fenster funktioniert **weder `window.open` noch ein blanker
+`<a target="_blank">`** — beides scheitert still (kein Popup, kein Tab). Das ist
+mehrfach passiert (Belege-Download, INI-Brief, Footer-Link). Deshalb immer:
+- **Externe URL öffnen** → `openExternal(url)` aus `src/lib/openExternal.js`
+  (Rust-`invoke("open_external")`, `window.open` nur als Browser-Dev-Fallback).
+  Links: `onClick={e => { e.preventDefault(); openExternal(url); }}`, nie nur `target="_blank"`.
+- **Datei ausgeben/drucken** → Blob + temporärer `<a download>`-Klick (landet in
+  „Downloads"), danach `toast(...)`. Muster: `src/lib/feed.js` (openBelegFile),
+  `src/lib/datevExport.js`, `src/lib/ebics/iniLetter.js`.
+- **Vor jedem Release greppen:** `window.open` / `target="_blank"` dürfen nur in
+  `openExternal.js` vorkommen.
+
 ## Owner vs. Tix & Travel (Sonderstatus)
 - **Owner-Account** = das per Railway-Variable `OWNER_ID` freigeschaltete Anbieter-Konto. Nur dieses
   hat Vendor-Rechte (Support-Login in Kundenkonten, Modus-Vorschau). NICHT an das „Gründer"-Flag koppeln.

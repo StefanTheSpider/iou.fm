@@ -3,6 +3,7 @@
 // Der INI-Brief enthält die öffentlichen Schlüssel-Hashes und wird unterschrieben
 // per Post/Fax an die Bank geschickt, damit sie den Zugang freischaltet.
 import { formatHashBlocks } from "./keys.js";
+import { toast } from "../toast.js";
 
 function row(label, value) {
   return `<tr><td class="lbl">${label}</td><td class="val">${value || "—"}</td></tr>`;
@@ -31,7 +32,7 @@ export function buildIniLetterHtml(cfg, keys) {
   .sign div { flex: 1; border-top: 1px solid #111; padding-top: 6px; color: #555; }
   .hint { margin-top: 28px; padding: 12px 14px; background: #fff8e1; border: 1px solid #f0d98a; border-radius: 6px; color: #5b4a00; }
   @media print { body { margin: 18mm; } .noprint { display: none; } }
-</style></head><body>
+</style></head><body onload="setTimeout(function(){try{window.print()}catch(e){}},400)">
 <h1>EBICS INI-Brief</h1>
 <p class="sub">Initialisierung der elektronischen Unterschrift · erstellt am ${dateStr}</p>
 
@@ -72,12 +73,20 @@ export function buildIniLetterHtml(cfg, keys) {
 </body></html>`;
 }
 
-// Öffnet den INI-Brief in einem neuen Fenster und startet den Druckdialog.
+// Öffnet bzw. lädt den INI-Brief herunter.
+// Das Tauri-App-Fenster blockiert window.open (auch für Blob-URLs), deshalb laden
+// wir den Brief zuverlässig als HTML-Datei in „Downloads" – dort im Browser öffnen,
+// drucken oder als PDF speichern (gleiches Muster wie SEPA-/Beleg-Download).
 export function openIniLetter(cfg, keys) {
   const html = buildIniLetterHtml(cfg, keys);
-  const w = window.open("", "_blank", "width=900,height=1000");
-  if (!w) throw new Error("Pop-up blockiert – bitte erlauben, um den INI-Brief zu öffnen.");
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  const partner = (cfg.partnerId || "EBICS").replace(/[^A-Za-z0-9_-]/g, "");
+  const filename = `INI-Brief_${partner}.html`;
+  // Als Datei in „Downloads" ablegen (window.open ist im App-Fenster blockiert, s. REGEL 4).
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast(`„${filename}" in „Downloads" – dort öffnen und drucken.`);
 }

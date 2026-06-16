@@ -17,11 +17,7 @@ import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStar
 import { invoke } from "@tauri-apps/api/core";
 import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics, getOwnerCustomers } from "./lib/billing.js";
 
-// URL im System-Browser öffnen (Tauri), sonst neuer Tab.
-async function openExternal(url) {
-  try { await invoke("open_external", { url }); }
-  catch { window.open(url, "_blank", "noopener"); }
-}
+import { openExternal } from "./lib/openExternal.js";
 // Bedienungsanleitung (auf der Landingpage gepflegt).
 const HELP_URL = "https://stefanthespider.github.io/iou.fm/anleitung.html";
 const openHelp = () => openExternal(HELP_URL);
