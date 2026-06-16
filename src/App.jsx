@@ -101,16 +101,22 @@ export default function App() {
     if (session && session.currentUser.role !== "admin" && tab === "lohn") setTab("erstattung");
   }, [session, tab]);
 
-  // Beim Start auf neue Version prüfen (nur Desktop-App; sonst still).
-  // Den Lock-Screen-Auto-Login (Biometrie) erst nach dieser Prüfung auslösen, damit
-  // ein vorhandenes Update VOR dem Anmelden installiert werden kann (kein doppeltes Login).
-  // Spätestens nach 6 s freigeben, falls die Prüfung hängt (offline).
+  // Auf neue Version prüfen – beim Start UND danach laufend (alle 15 min + bei Fenster-Fokus),
+  // damit der „Jetzt aktualisieren"-Button auch im laufenden Betrieb erscheint, ohne Neustart.
+  // Den Lock-Screen-Auto-Login (Biometrie) erst nach der ersten Prüfung auslösen, damit ein
+  // vorhandenes Update VOR dem Anmelden installiert wird (kein doppeltes Login). Erste Prüfung
+  // spätestens nach 6 s freigeben, falls sie hängt (offline).
   useEffect(() => {
-    const t = setTimeout(() => setUpdChecked(true), 6000);
-    checkForUpdate()
-      .then((u) => { if (u) setUpdate(u); })
-      .finally(() => { clearTimeout(t); setUpdChecked(true); });
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const run = () => checkForUpdate()
+      .then((u) => { if (u && !cancelled) setUpdate(u); })
+      .catch(() => {});
+    const t = setTimeout(() => { if (!cancelled) setUpdChecked(true); }, 6000);
+    run().finally(() => { clearTimeout(t); if (!cancelled) setUpdChecked(true); });
+    const iv = setInterval(run, 15 * 60 * 1000);
+    const onFocus = () => run();
+    window.addEventListener("focus", onFocus);
+    return () => { cancelled = true; clearTimeout(t); clearInterval(iv); window.removeEventListener("focus", onFocus); };
   }, []);
 
   // Zentrale Update-Installation: lädt + installiert und startet die App neu (kehrt bei
