@@ -5,6 +5,15 @@ import { flatten, toCsv, toDatev, kindLabel, downloadText } from "../lib/datevEx
 
 const deDate = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—");
 
+// Feste Farbe je Überweisungstyp – damit Erstattung/Rechnung/Sammel auf einen Blick
+// auseinanderzuhalten sind (verhindert Verwechslung bei ähnlichen Summen).
+const KIND_COLOR = {
+  erstattung: { bd: "#5b8cff", bg: "rgba(91,140,255,.18)", fg: "#bcd0ff" },  // blau
+  rechnung:   { bd: "#e7b15a", bg: "rgba(231,177,90,.18)", fg: "#f0c889" },  // bernstein
+  sammel:     { bd: "#b98cff", bg: "rgba(185,140,255,.18)", fg: "#d8c4ff" }, // violett
+};
+const kindColor = (k) => KIND_COLOR[k] || { bd: "var(--border-strong)", bg: "var(--raised-2)", fg: "var(--muted)" };
+
 // Historie aller erzeugten SEPA-Dateien (Löhne, Erstattungen, Sammelüberweisung)
 // mit Filtern + Export für die Buchhaltung (DATEV / CSV). Mitarbeiter sehen nur,
 // was wann überwiesen wurde; Export & erneuter Download sind Admin-Aktionen.
@@ -100,12 +109,14 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
             <tr><th></th><th>Ausführung</th><th>Erstellt</th><th>Typ</th><th>Konto</th><th>Zahlungen</th><th className="amount">Summe</th><th>Datei</th><th></th></tr>
           </thead>
           <tbody>
-            {filtered.map((b) => (
+            {filtered.map((b) => {
+              const c = kindColor(b.kind);
+              return (
               <Fragment key={b.id}>
                 <tr style={{ cursor: "pointer" }} onClick={() => setOpenId(openId === b.id ? null : b.id)}>
-                  <td style={{ width: 24 }}>{openId === b.id ? "▾" : "▸"}</td>
+                  <td style={{ width: 24, borderLeft: `4px solid ${c.bd}` }}>{openId === b.id ? "▾" : "▸"}</td>
                   <td>{deDate(b.execDate)}</td><td className="muted">{deDate(b.createdAt)}</td>
-                  <td><span className="pill">{kindLabel(b.kind)}</span></td>
+                  <td><span className="pill" style={{ background: c.bg, color: c.fg }}>{kindLabel(b.kind)}</span></td>
                   <td>{b.accountLabel}</td><td>{b.count}</td>
                   <td className="amount">{formatEur(b.sumCents)}</td>
                   <td className="muted">{b.filename}</td>
@@ -116,14 +127,15 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
                 </tr>
                 {openId === b.id && (b.payments || []).map((p, i) => (
                   <tr key={b.id + "-" + i} style={{ background: "var(--bg)" }}>
-                    <td></td><td colSpan={3} className="muted">{p.name}</td>
+                    <td style={{ borderLeft: `4px solid ${c.bd}` }}></td><td colSpan={3} className="muted">{p.name}</td>
                     <td colSpan={2} className="muted mono">{p.iban}</td>
                     <td className="amount">{formatEur(p.amountCents)}</td>
                     <td colSpan={2} className="muted">{p.purpose}</td>
                   </tr>
                 ))}
               </Fragment>
-            ))}
+            );
+            })}
             {filtered.length === 0 &&<tr><td colSpan={9} className="muted" style={{ textAlign: "center", padding: 28 }}>Keine Überweisungen im gewählten Zeitraum.</td></tr>}
           </tbody>
         </table>
