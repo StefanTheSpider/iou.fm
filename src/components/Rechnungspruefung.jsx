@@ -2,6 +2,7 @@ import { useState } from "react";
 import { inspectIban, formatIban, cleanIban } from "../lib/iban.js";
 import { formatEur } from "../lib/money.js";
 import { emptyLine, invoiceTotals, parsePastedLines } from "../lib/invoice.js";
+import { toastError } from "../lib/toast.js";
 
 // Rechnungsprüfung: Positionen erfassen, angenommene Menge bestätigen/kürzen,
 // freigegebenen Betrag in die Sammelüberweisung übernehmen.
@@ -18,6 +19,7 @@ export default function Rechnungspruefung({ data, updateData }) {
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const fail = (m) => { setError(m); toastError(m); };  // zentral + mittig sichtbar
 
   function pickSupplier(id) {
     setSupplierId(id);
@@ -46,9 +48,9 @@ export default function Rechnungspruefung({ data, updateData }) {
     setError(""); setInfo(""); setBusy(true);
     try {
     const ibInfo = ibanInfo?.ok ? ibanInfo : await checkIban(ibanVal);
-    if (!name.trim()) return setError("Bitte Lieferant/Empfänger angeben.");
-    if (!ibInfo?.ok) return setError("Bitte gültige IBAN des Lieferanten angeben.");
-    if (totals.approvedCents <= 0) return setError("Freigegebener Betrag ist 0 – bitte Positionen prüfen.");
+    if (!name.trim()) return fail("Bitte Lieferant/Empfänger angeben.");
+    if (!ibInfo?.ok) return fail("Bitte gültige IBAN des Lieferanten angeben.");
+    if (totals.approvedCents <= 0) return fail("Freigegebener Betrag ist 0 – bitte Positionen prüfen.");
 
     const purpose = `Rechnung ${invNr || ""} ${name}`.replace(/\s+/g, " ").trim();
     const row = {
@@ -63,7 +65,7 @@ export default function Rechnungspruefung({ data, updateData }) {
     setInfo(`Übernommen: ${formatEur(totals.approvedCents)} für ${name.trim()} → im Sammelüberweisungs-/Erstattungs-Tab zur Auszahlung bereit.`);
     setInvNr(""); setLines([emptyLine()]);
     } catch (e) {
-      setError(e?.message || "Übernahme fehlgeschlagen – bitte erneut versuchen.");
+      fail(e?.message || "Übernahme fehlgeschlagen – bitte erneut versuchen.");
     } finally {
       setBusy(false);
     }

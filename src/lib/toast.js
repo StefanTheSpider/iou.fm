@@ -5,3 +5,8 @@ export function toast(message, type = "ok") {
   if (typeof window === "undefined" || !message) return;
   window.dispatchEvent(new CustomEvent("iou-toast", { detail: { message: String(message), type } }));
 }
+
+// Fehler prominent (oben mittig, groß, bleibt bis zum Wegklicken) anzeigen.
+export function toastError(message) {
+  toast(message, "error");
+}

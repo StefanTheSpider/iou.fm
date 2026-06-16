@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { inspectIban, formatIban } from "../lib/iban.js";
+import { toastError } from "../lib/toast.js";
 
 // Pflicht-Ersteinrichtung durch den Admin, bevor die App nutzbar ist:
 // mindestens ein Auftraggeberkonto + Wahl des zweiten Moduls.
@@ -11,6 +12,7 @@ export default function Setup({ data, updateData, onComplete }) {
   const [ibanVal, setIbanVal] = useState("");
   const [ibanInfo, setIbanInfo] = useState(null);
   const [error, setError] = useState("");
+  const fail = (m) => { setError(m); toastError(m); };  // zentral + mittig sichtbar
 
   async function checkIban(v) {
     if (!v.trim()) { setIbanInfo(null); return null; }
@@ -26,7 +28,7 @@ export default function Setup({ data, updateData, onComplete }) {
   async function addAccount(e) {
     e.preventDefault();
     const info = await checkIban(ibanVal);
-    if (!info?.ok) { setError(info?.reason || "Bitte eine gültige IBAN eingeben."); return; }
+    if (!info?.ok) { fail(info?.reason || "Bitte eine gültige IBAN eingeben."); return; }
     updateData((d) => ({
       ...d,
       accounts: [...(d.accounts || []), {
@@ -40,7 +42,7 @@ export default function Setup({ data, updateData, onComplete }) {
   const setMode = (m) => updateData((d) => ({ ...d, config: { ...(d.config || {}), payoutMode: m } }));
 
   function finish() {
-    if (accounts.length === 0) { setError("Bitte mindestens ein Auftraggeberkonto anlegen."); return; }
+    if (accounts.length === 0) { fail("Bitte mindestens ein Auftraggeberkonto anlegen."); return; }
     onComplete();
   }
 

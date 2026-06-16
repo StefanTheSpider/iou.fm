@@ -5,6 +5,7 @@ import { computeRefund, REFUND_MODES } from "../lib/refund.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import { fetchOrder, ecommerceConfig, ecommerceConfigured, platformLabel } from "../lib/ecommerce/index.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
+import { toastError } from "../lib/toast.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const deDate = (iso) => (iso ? iso.split("-").reverse().join(".") : "");
@@ -65,6 +66,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [orderInput, setOrderInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const fail = (m) => { setError(m); toastError(m); };  // zentral + mittig sichtbar
   const [fMethod, setFMethod] = useState("alle");
   const [fStatus, setFStatus] = useState("offen");
   const [q, setQ] = useState("");
@@ -119,7 +121,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       } else {
         addRowFromOrder(o);
       }
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { fail(e.message); } finally { setBusy(false); }
   }
 
   function calc(r) {
@@ -151,8 +153,8 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
 
   function createSepa(accountId, execDate) {
     const account = accounts.find((a) => a.id === accountId);
-    if (!account || !validateIban(account.iban).ok) { setError("Bitte gültiges Auftraggeberkonto wählen."); return; }
-    if (!eligible.length) { setError("Keine offenen Überweisungen ausgewählt."); return; }
+    if (!account || !validateIban(account.iban).ok) { fail("Bitte gültiges Auftraggeberkonto wählen."); return; }
+    if (!eligible.length) { fail("Keine offenen Überweisungen ausgewählt."); return; }
 
     const payments = eligible.map(({ r, refund }) => ({
       name: r.customerName, iban: cleanIban(r.iban), bic: r.bic, amountCents: refund.refundCents,

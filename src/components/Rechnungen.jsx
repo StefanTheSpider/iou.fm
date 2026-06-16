@@ -4,6 +4,7 @@ import { validateIban, cleanIban, formatIban, inspectIban } from "../lib/iban.js
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import { extractInvoice } from "../lib/invoicePdf.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
+import { toastError } from "../lib/toast.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const deDate = (iso) => (iso ? String(iso).split("-").reverse().join(".") : "—");
@@ -45,6 +46,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const pdfStore = useRef(new Map());               // rowId -> { filename, content(b64) }, nur im Speicher
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const fail = (m) => { setError(m); toastError(m); };  // zentral + mittig sichtbar
   const [saved, setSaved] = useState("");
   const [belegMsg, setBelegMsg] = useState("");
   const [scan, setScan] = useState("");             // OCR-Fortschritt (gescannte PDFs)
@@ -191,7 +193,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       }
       setScan("");
       const failNote = failed ? ` ⚠ ${failed} Datei(en) konnten nicht gelesen werden.` : "";
-      if (failed && !newRows.length) setError(`${failed} eingegangene Datei(en) konnten nicht gelesen werden (beschädigt oder Server nicht erreichbar). Bitte erneut versuchen.`);
+      if (failed && !newRows.length) fail(`${failed} eingegangene Datei(en) konnten nicht gelesen werden (beschädigt oder Server nicht erreichbar). Bitte erneut versuchen.`);
       else if (newRows.length) {
         setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${dup ? ` · ${dup} Dublette(n) übersprungen` : ""}${failNote} – bitte prüfen, dann auszahlen.`);
       } else if (dup) {
@@ -201,7 +203,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       } else {
         setSaved("Keine neuen Belege im E-Mail-Eingang gefunden. (Schon eingelesene werden nicht erneut angezeigt.)");
       }
-    } catch (e) { setScan(""); setError("E-Mail-Eingang konnte nicht geladen werden: " + (e.message || "")); }
+    } catch (e) { setScan(""); fail("E-Mail-Eingang konnte nicht geladen werden: " + (e.message || "")); }
   }
 
   async function onIbanChange(id, value) {
@@ -245,9 +247,10 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       setBelegMsg(`✓ ${res?.sent || files.length} Beleg(e) an Steuerberater gesendet.`);
     } catch (e) {
       const m = e.message || "";
-      setBelegMsg(/Empfänger|recipient/i.test(m)
+      const msg = /Empfänger|recipient/i.test(m)
         ? "Kein Empfänger hinterlegt – trage Steuerberater unter Stammdaten → Belege & Buchhaltung ein."
-        : "Beleg-Versand fehlgeschlagen: " + m);
+        : "Beleg-Versand fehlgeschlagen: " + m;
+      setBelegMsg(msg); toastError(msg);
     }
   }
 
@@ -266,9 +269,10 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       setBelegMsg(`✓ ${res?.sent || 1} Beleg an den Steuerberater gesendet${toTxt ? ` → ${toTxt}` : ""} – nicht zur Zahlung hinzugefügt.`);
     } catch (e) {
       const m = e.message || "";
-      setBelegMsg(/Empfänger|recipient/i.test(m)
+      const msg = /Empfänger|recipient/i.test(m)
         ? "Kein Empfänger hinterlegt – trage Steuerberater unter Stammdaten → Belege & Buchhaltung ein."
-        : "Beleg-Versand fehlgeschlagen: " + m);
+        : "Beleg-Versand fehlgeschlagen: " + m;
+      setBelegMsg(msg); toastError(msg);
     }
   }
 
@@ -289,16 +293,17 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       setBelegMsg(`✓ ${res.sent || files.length} Beleg(e) an Steuerberater gesendet.`);
     } catch (e) {
       const m = e.message || "";
-      setBelegMsg(/Empfänger/i.test(m)
+      const msg = /Empfänger/i.test(m)
         ? "Kein Empfänger hinterlegt – trage Steuerberater unter Stammdaten → Belege & Buchhaltung ein."
-        : "Beleg-Versand fehlgeschlagen: " + m);
+        : "Beleg-Versand fehlgeschlagen: " + m;
+      setBelegMsg(msg); toastError(msg);
     }
   }
 
   function createSepa(accountId, execDate) {
     const account = accounts.find((a) => a.id === accountId);
-    if (!account || !validateIban(account.iban).ok) { setError("Bitte gültiges Auftraggeberkonto wählen."); return; }
-    if (!eligible.length) { setError("Keine zahlbaren Rechnungen ausgewählt."); return; }
+    if (!account || !validateIban(account.iban).ok) { fail("Bitte gültiges Auftraggeberkonto wählen."); return; }
+    if (!eligible.length) { fail("Keine zahlbaren Rechnungen ausgewählt."); return; }
     const eligibleRows = eligible.map((c) => c.r); // vor dem Status-Update merken (für Beleg-Versand)
     const payments = eligible.map(({ r, cents }) => ({
       name: r.creditorName || "Empfänger", iban: cleanIban(r.iban), bic: r.bic, amountCents: cents,

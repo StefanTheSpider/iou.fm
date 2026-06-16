@@ -4,6 +4,7 @@ import { inspectIban, formatIban, validateIban } from "../lib/iban.js";
 import { parseAmount, formatEur } from "../lib/money.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
+import { toastError } from "../lib/toast.js";
 
 export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = false }) {
   const [parsed, setParsed] = useState(null);
@@ -13,6 +14,7 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
   const [debtorId, setDebtorId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const fail = (m) => { setError(m); toastError(m); };  // zentral + mittig sichtbar
   const [drag, setDrag] = useState(false);
   const [lastSepa, setLastSepa] = useState(null); // { xml, filename } – für optionalen EBICS-Versand
   const fileRef = useRef(null);
@@ -58,7 +60,7 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
       setSelected(new Set(enriched.filter((r) => r.ibanValid).map((r) => r.id)));
       setHoldGf(false);
     } catch (e) {
-      setError(e.message || "Fehler beim Einlesen der PDF.");
+      fail(e.message || "Fehler beim Einlesen der PDF.");
       setParsed(null); setRows([]);
     } finally {
       setBusy(false);
@@ -135,10 +137,10 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
   }, [rows, selected, holdGf]);
 
   function generate() {
-    if (!debtor) return setError("Bitte ein Auftraggeberkonto wählen.");
+    if (!debtor) return fail("Bitte ein Auftraggeberkonto wählen.");
     const v = validateIban(debtor.iban);
-    if (!v.ok) return setError("Das Auftraggeberkonto hat keine gültige IBAN.");
-    if (!stats.selRows.length) return setError("Keine Zeilen ausgewählt.");
+    if (!v.ok) return fail("Das Auftraggeberkonto hat keine gültige IBAN.");
+    if (!stats.selRows.length) return fail("Keine Zeilen ausgewählt.");
 
     const execIso = parsed.executionDate || new Date().toISOString().slice(0, 10);
     const [y, m] = execIso.split("-");
