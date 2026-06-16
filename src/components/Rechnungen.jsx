@@ -84,10 +84,11 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
     // Bereits vorhandene Rechnungen (Dublettenprüfung), wird im Lauf ergänzt.
     const seen = new Set((rows || []).map(rowKey).filter((k) => k !== "||0"));
-    let dup = 0;
+    let dup = 0; let ignored = 0;
     try {
       for (const file of Array.from(fileList || [])) {
-        if (!/\.pdf$/i.test(file.name)) continue;
+        // Unterstützt: PDF (inkl. ZUGFeRD) und reine XRechnung-XML. Alles andere: zählen & melden.
+        if (!/\.(pdf|xml)$/i.test(file.name)) { ignored++; continue; }
         let ex;
         const onOcrProgress = (p) => setScan(`🔎 „${file.name}": Texterkennung läuft … ${Math.round((p || 0) * 100)}%`);
         try { ex = await extractInvoice(file, { ownNames, ownIbans, onOcrProgress }); }
@@ -104,7 +105,8 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         const known = creditors[iban];
         const meta = iban ? await ibanMeta(iban)
           : { ibanValid: false, bic: "", ibanReason: ex._err ? "Konnte nicht automatisch ausgelesen werden – bitte Felder manuell ausfüllen."
-              : ex.noIban ? "Keine IBAN gefunden – ggf. extern bezahlt (z. B. PayPal/Karte). Nicht per SEPA zahlbar." : "" };
+              : ex.paidHint ? "Laut Beleg evtl. bereits bezahlt (z. B. PayPal/Karte) – bitte prüfen."
+              : ex.noIban ? "Keine IBAN/Bankverbindung gefunden – nicht per SEPA zahlbar." : "" };
         const creditorName = (known?.name) || ex.creditorName || "";
         const row = {
           id: crypto.randomUUID(), fileName: ex.fileName || file.name, source: ex.source || "heuristik",
@@ -120,11 +122,15 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         try { const ab = await file.arrayBuffer(); pdfStore.current.set(row.id, { filename: row.fileName, content: bufToB64(ab) }); } catch { /* egal */ }
         // eslint-disable-next-line no-loop-func
         setInvoices((rs) => [row, ...rs]);
-        if (ex.paidHint || ex.noIban) setWarn({ row, reason: "external" });
+        if (ex.paidHint) setWarn({ row, reason: "paid_ext" });
+        else if (ex.noIban) setWarn({ row, reason: "noiban" });
         else if (invoiceNumber && paidSet.has(invoiceNumber.toLowerCase())) setWarn({ row, reason: "paid" });
         else if (ex.amountCents && creditorName && paidPairs.has(`${creditorName.toLowerCase().trim()}|${ex.amountCents}`)) setWarn({ row, reason: "paidPair" });
       }
-      if (dup) setError(`${dup} bereits vorhandene Rechnung(en) übersprungen (gleiche Nr. + IBAN + Betrag).`);
+      const notes = [];
+      if (dup) notes.push(`${dup} bereits vorhandene Rechnung(en) übersprungen (gleiche Nr. + IBAN + Betrag)`);
+      if (ignored) notes.push(`${ignored} Datei(en) ignoriert – es werden nur PDF und XRechnung-XML unterstützt`);
+      if (notes.length) setError(notes.join(" · ") + ".");
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
   }
 
@@ -149,8 +155,8 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         newSeen.push(b.id);
         let files = [];
         try { files = await mailbox.files(b.id); } catch { failed++; continue; }
-        // Echte Anhang-PDFs bevorzugt, sonst das aus dem Mailtext erzeugte PDF.
-        const atts = files.filter((f) => /\.pdf$/i.test(f.name) && !/_beleg\.pdf$/i.test(f.name));
+        // Echte Anhänge (PDF inkl. ZUGFeRD, oder reine XRechnung-XML) bevorzugt, sonst das Body-PDF.
+        const atts = files.filter((f) => /\.(pdf|xml)$/i.test(f.name) && !/_beleg\.pdf$/i.test(f.name));
         const pick = atts.length ? atts : files.filter((f) => /_beleg\.pdf$/i.test(f.name));
         for (const f of pick) {
           setScan(`Lese „${(b.subject || b.from || "Beleg").slice(0, 40)}" …`);
@@ -347,7 +353,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
       <div className="card">
         <div className="toolbar" style={{ marginTop: 0 }}>
-          <input ref={fileRef} type="file" accept="application/pdf" multiple style={{ display: "none" }}
+          <input ref={fileRef} type="file" accept="application/pdf,.pdf,application/xml,text/xml,.xml" multiple style={{ display: "none" }}
             onChange={(e) => addFiles(e.target.files)} />
           <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy || mailBusy}>{busy ? "Lese …" : "Rechnungs-PDFs laden"}</button>
           {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Per E-Mail an deine belege-Adresse weitergeleitete Rechnungen einlesen">{mailBusy ? "Lade Eingang …" : "Eingegangene Rechnungen laden"}</button>}
@@ -476,9 +482,11 @@ function DuplicateModal({ row, reason = "paid", onClose, onRemove, onForwardOnly
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onClose}>
       <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>⚠️</div>
-        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>{reason === "external" ? "Achtung – bitte prüfen!" : "Diese Rechnung wurde wahrscheinlich schon bezahlt!"}</h2>
-        {reason === "external"
-          ? <p style={{ fontSize: 15 }}>Diese Rechnung enthält <strong>keine IBAN</strong> bzw. deutet auf eine <strong>bereits erfolgte Zahlung</strong> hin (z. B. PayPal/Karte). iou.fm kennt nur Zahlungen, die <strong>über iou.fm</strong> liefen – externe Zahlungen kann es nicht erkennen. Bitte prüfen, bevor du sie in die SEPA-Datei nimmst.</p>
+        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>{reason === "noiban" ? "Keine Bankverbindung gefunden" : reason === "paid_ext" ? "Evtl. bereits bezahlt – bitte prüfen" : "Diese Rechnung wurde wahrscheinlich schon bezahlt!"}</h2>
+        {reason === "noiban"
+          ? <p style={{ fontSize: 15 }}>Diese Rechnung enthält <strong>keine IBAN/Bankverbindung</strong>. Sie ist deshalb <strong>nicht per SEPA überweisbar</strong> (z. B. ein Angebot/Proforma oder eine bereits per PayPal/Karte bezahlte Rechnung). Du kannst die IBAN unten manuell ergänzen – oder die Rechnung nur an den Steuerberater geben.</p>
+          : reason === "paid_ext"
+          ? <p style={{ fontSize: 15 }}>Der Beleg deutet auf eine <strong>bereits erfolgte Zahlung</strong> hin (z. B. Zahlungsart PayPal/Karte). iou.fm kennt nur Zahlungen, die <strong>über iou.fm</strong> liefen – externe Zahlungen kann es nicht erkennen. Bitte prüfen, bevor du sie in die SEPA-Datei nimmst.</p>
           : reason === "paidPair"
           ? <p style={{ fontSize: 15 }}>Es gibt bereits eine Zahlung an <strong>{row.creditorName}</strong> über <strong>{row.amount} €</strong> in einer früheren SEPA-Datei (gleicher Lieferant + Betrag, evtl. ohne Rechnungsnummer). Erneut zahlen = <strong>Doppelzahlung</strong>.</p>
           : <p style={{ fontSize: 15 }}>Rechnungsnummer <strong>{row.invoiceNumber}</strong>{row.creditorName ? <> ({row.creditorName})</> : ""} taucht bereits in einer früheren SEPA-Datei auf. Erneut zahlen = <strong>Doppelzahlung</strong>.</p>}

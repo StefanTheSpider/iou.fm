@@ -1,3 +1,4 @@
+import { toast } from "./toast.js";
 // Export der Überweisungs-Historie für die Buchhaltung:
 //  - toCsv: einfache, gut lesbare CSV (Excel/jeder Buchhalter)
 //  - toDatev: DATEV-Buchungsstapel (EXTF, Format 21). Konten & Berater-/
@@ -90,4 +91,5 @@ export function downloadText(content, filename, mime = "text/csv;charset=utf-8")
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  toast(`„${filename}" heruntergeladen · Ordner „Downloads"`);
 }

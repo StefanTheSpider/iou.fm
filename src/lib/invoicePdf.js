@@ -36,22 +36,49 @@ const localUnder = (root, parent, child) => {
   for (const el of els) if (el.localName === parent) return localText(el, child);
   return "";
 };
+// IBAN robust im ganzen Dokument finden (format-agnostisch: CII wie UBL).
+function findIbanInXml(doc) {
+  for (const el of doc.getElementsByTagName("*")) {
+    const t = (el.textContent || "").trim();
+    if (t.length >= 15 && t.length <= 40 && /^[A-Z]{2}\s?\d/i.test(t)) {
+      const c = cleanIban(t);
+      if (validateIban(c).ok) return c;
+    }
+  }
+  return "";
+}
+function firstAmountCents(doc, names) {
+  for (const n of names) {
+    const s = localText(doc, n);
+    if (s) { const v = parseFloat(String(s).replace(/\s/g, "").replace(",", ".")); if (v > 0) return Math.round(v * 100); }
+  }
+  return 0;
+}
+// Erste direkte cbc:ID des Wurzelelements (UBL-Rechnungsnummer).
+function rootChildId(doc) {
+  const root = doc.documentElement; if (!root) return "";
+  for (const el of Array.from(root.children || [])) if (el.localName === "ID" && (el.textContent || "").trim()) return el.textContent.trim();
+  return "";
+}
+// Unterstützt ZUGFeRD/Factur-X (CII) UND XRechnung (UBL).
 function parseEInvoiceXml(xmlStr) {
   let doc;
   try { doc = new DOMParser().parseFromString(xmlStr, "application/xml"); } catch { return null; }
   if (!doc || doc.getElementsByTagName("parsererror").length) return null;
-  const ibanRaw = localText(doc, "IBANID");
-  const iban = ibanRaw ? cleanIban(ibanRaw) : "";
-  if (iban && !validateIban(iban).ok) { /* trotzdem übernehmen, Nutzer prüft */ }
-  const amountStr = localText(doc, "DuePayableAmount") || localText(doc, "GrandTotalAmount");
-  const amountCents = amountStr ? Math.round(parseFloat(amountStr) * 100) : 0;
-  const dt = localText(doc, "DueDateDateTime") || ""; // Format meist YYYYMMDD
-  const dueDate = /^\d{8}$/.test(dt) ? `${dt.slice(0, 4)}-${dt.slice(4, 6)}-${dt.slice(6, 8)}` : "";
-  const invoiceNumber = localUnder(doc, "ExchangedDocument", "ID") || localText(doc, "ID");
-  const creditorName = localUnder(doc, "SellerTradeParty", "Name");
+  const iban = findIbanInXml(doc) || (localText(doc, "IBANID") ? cleanIban(localText(doc, "IBANID")) : "");
+  const amountCents = firstAmountCents(doc, ["DuePayableAmount", "PayableAmount", "GrandTotalAmount", "TaxInclusiveAmount"]);
+  // Fälligkeit: CII (YYYYMMDD) oder UBL (YYYY-MM-DD).
+  let dueDate = "";
+  const dtCii = localText(doc, "DueDateDateTime");
+  if (/^\d{8}$/.test(dtCii)) dueDate = `${dtCii.slice(0, 4)}-${dtCii.slice(4, 6)}-${dtCii.slice(6, 8)}`;
+  else { const dUbl = localText(doc, "DueDate"); if (/^\d{4}-\d{2}-\d{2}/.test(dUbl)) dueDate = dUbl.slice(0, 10); }
+  const invoiceNumber = localUnder(doc, "ExchangedDocument", "ID") || rootChildId(doc) || localText(doc, "ID");
+  const creditorName = localUnder(doc, "SellerTradeParty", "Name")           // CII
+    || localUnder(doc, "PartyLegalEntity", "RegistrationName")               // UBL (juristischer Name)
+    || localUnder(doc, "PartyName", "Name");                                 // UBL (Anzeigename)
   if (!iban && !amountCents && !invoiceNumber) return null;
-  return { source: "e-rechnung", iban, ibans: iban ? [iban] : [], bic: localText(doc, "BICID"),
-    amountCents, dueDate, invoiceNumber, creditorName };
+  return { source: "e-rechnung", iban, ibans: iban ? [iban] : [], noIban: !iban, paidHint: false,
+    bic: localText(doc, "BICID"), amountCents, dueDate, invoiceNumber, creditorName, hasText: true };
 }
 
 async function findEInvoiceXml(pdf) {
@@ -85,6 +112,15 @@ async function openPdf(file) {
 }
 
 export async function extractInvoice(file, opts = {}) {
+  // Reine XRechnung-/E-Rechnungs-XML-Datei (kein PDF) → direkt exakt auslesen.
+  if (/\.xml$/i.test(file.name || "")) {
+    const empty = { source: "e-rechnung", fileName: file.name, hasText: false, creditorName: "", iban: "", bic: "", amountCents: 0, invoiceNumber: "", dueDate: "", ibans: [], noIban: true, paidHint: false };
+    try {
+      const xml = new TextDecoder("utf-8").decode(await file.arrayBuffer());
+      const e = parseEInvoiceXml(xml);
+      return e ? { ...e, fileName: file.name } : empty;
+    } catch { return empty; }
+  }
   const pdf = await openPdf(file);
   const e = await findEInvoiceXml(pdf);
   if (e) return { ...e, fileName: file.name };

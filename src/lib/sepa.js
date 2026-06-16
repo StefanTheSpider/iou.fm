@@ -1,5 +1,6 @@
 // SEPA-Überweisung pain.001.001.09 erzeugen.
 // Beträge werden intern in Cent (Ganzzahl) geführt, um Rundungsfehler zu vermeiden.
+import { toast } from "./toast.js";
 
 const SEPA_ALLOWED = /[^A-Za-z0-9/?:().,'+\-\s]/g;
 
@@ -121,4 +122,5 @@ export function downloadXml(xml, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  toast(`„${filename}" heruntergeladen · Ordner „Downloads"`);
 }

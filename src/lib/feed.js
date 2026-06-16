@@ -1,5 +1,6 @@
 // Shopify-Feed & -Integration gegen den Hub (Nacht-Cron liegt serverseitig).
 import { HUB_URL } from "../config.js";
+import { toast } from "./toast.js";
 
 const api = (p) => HUB_URL.replace(/\/+$/, "") + p;
 const auth = (s) => ({ Authorization: `Bearer ${s.accessKey}` });
@@ -73,6 +74,7 @@ export async function openBelegFile(session, beId, name) {
   a.href = objUrl; a.download = name; a.rel = "noopener";
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+  toast(`„${name.replace(/^[0-9a-f-]{36}_/i, "")}" heruntergeladen · Ordner „Downloads"`);
 }
 
 // Rechnungs-PDFs an Steuerberater/DATEV mailen (Belege).

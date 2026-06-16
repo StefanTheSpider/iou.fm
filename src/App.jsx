@@ -9,6 +9,7 @@ import Rechnungen from "./components/Rechnungen.jsx";
 import Archiv from "./components/Archiv.jsx";
 import Setup from "./components/Setup.jsx";
 import Footer from "./components/Footer.jsx";
+import Toaster from "./components/Toaster.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
@@ -37,6 +38,7 @@ export default function App() {
   const [restoring, setRestoring] = useState(true);
   const [tab, setTab] = useState("lohn");
   const [dirty, setDirty] = useState(false);
+  const [dirtyCount, setDirtyCount] = useState(0); // Anzahl ungespeicherter Änderungen (für den Button-Text)
   const [saved, setSaved] = useState(false);
   const [update, setUpdate] = useState(null); // { version, notes, install }
   const [updating, setUpdating] = useState(false);
@@ -235,17 +237,18 @@ export default function App() {
     sessionRef.current = next;
     setSession(next);
     if (immediate) {
-      saveVault(next, nextData).then(() => { setDirty(false); setSaveErr(""); flashSaved(); pushQuiet(); })
+      saveVault(next, nextData).then(() => { setDirty(false); setDirtyCount(0); setSaveErr(""); flashSaved(); pushQuiet(); })
         .catch((e) => { console.error("Speichern fehlgeschlagen", e); setSaveErr("Speichern fehlgeschlagen – deine letzte Änderung wurde NICHT gespeichert. Bitte erneut versuchen."); });
     } else {
       setDirty(true);
+      setDirtyCount((n) => n + 1);
     }
   }, [flashSaved, pushQuiet]);
 
   const commit = useCallback(() => {
     const s = sessionRef.current;
     if (!s) return;
-    saveVault(s, s.data).then(() => { setDirty(false); setSaveErr(""); flashSaved(); pushQuiet(); })
+    saveVault(s, s.data).then(() => { setDirty(false); setDirtyCount(0); setSaveErr(""); flashSaved(); pushQuiet(); })
       .catch((e) => { console.error("Speichern fehlgeschlagen", e); setSaveErr("Speichern fehlgeschlagen – deine Änderungen wurden NICHT gespeichert. Bitte erneut versuchen."); });
   }, [flashSaved, pushQuiet]);
 
@@ -407,6 +410,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <Toaster />
       <UpdateBanner />
       {saveErr && (
         <div className="owner-banner" style={{ background: "rgba(255,107,107,.14)", borderColor: "rgba(255,107,107,.6)", color: "#ffb3b3" }}>
@@ -432,7 +436,11 @@ export default function App() {
         )}
         <div className="spacer" />
         {saved && <span className="save-indicator show">✓ Gespeichert</span>}
-        {dirty && <button className="btn small" onClick={commit}>Änderungen speichern</button>}
+        {dirty && (
+          <button className="btn" onClick={commit} style={{ boxShadow: "0 0 0 3px rgba(231,177,90,.25)", fontWeight: 700 }} title="Noch nicht gespeicherte Änderungen jetzt sichern">
+            💾 {dirtyCount > 1 ? `Alle Änderungen speichern (${dirtyCount})` : "Änderung speichern"}
+          </button>
+        )}
         <button className="lock-btn" onClick={() => setThemeMode(effectiveTheme.mode === "light" ? "dark" : "light")} title="Hell/Dunkel umschalten (nur für dich, auf diesem Gerät)" aria-label="Darstellung umschalten">
           {effectiveTheme.mode === "light" ? "🌙 Dunkel" : "☀️ Hell"}
         </button>
