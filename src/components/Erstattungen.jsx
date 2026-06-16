@@ -285,14 +285,21 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
           const ibanLen = (r.iban || "").replace(/[^0-9A-Za-z]/g, "").length;
           const showInvalid = sepaMode && !r.ibanValid && ibanLen >= 15;
           // Warum ist dieser offene Eintrag (noch) nicht für die SEPA-Datei auswählbar?
-          let blockReason = "";
+          // block = { field, short, msg } – short für die Kopf-Pille, msg für die zentrierte Kachel-Meldung,
+          // field markiert das betroffene Eingabefeld (rot umrandet).
+          let block = null;
           if (sepaMode && r.status === "offen" && !sepaEligible) {
-            if (!isEur) blockReason = `${r.currency} – kein SEPA`;
-            else if (!r.ibanValid) blockReason = ibanLen >= 15 ? "IBAN ungültig" : "IBAN fehlt";
-            else if (!refund.valid) blockReason = "Betrag fehlt";
+            if (!isEur) block = { field: "paid", short: `${r.currency} – kein SEPA`, msg: `Währung ${r.currency} – nur Beträge in EUR sind per SEPA-Überweisung zahlbar.` };
+            else if (!r.ibanValid) block = ibanLen >= 15
+              ? { field: "iban", short: "IBAN ungültig", msg: "IBAN ungültig – bitte die IBAN des Empfängers prüfen und korrigieren." }
+              : { field: "iban", short: "IBAN fehlt", msg: "IBAN fehlt – bitte die IBAN des Empfängers eintragen, damit überwiesen werden kann." };
+            else if (!refund.valid) block = r.mode === "fixed"
+              ? { field: "amount", short: "Betrag fehlt", msg: "Fester Erstattungsbetrag fehlt – bitte rechts unter Erstattungsart den Betrag in € eintragen." }
+              : { field: "amount", short: "Betrag 0", msg: "Erstattungsbetrag ergibt 0 € – bitte Gebühr/Betrag unter Erstattungsart prüfen." };
           }
+          const blockReason = block?.short || "";
           return (
-            <div key={r.id} className={`refund-card ${showInvalid ? "invalid" : ""} ${r.status === "erledigt" ? "done" : ""}`}>
+            <div key={r.id} className={`refund-card ${block ? "has-error" : ""} ${showInvalid ? "invalid" : ""} ${r.status === "erledigt" ? "done" : ""}`}>
               <div className="refund-head">
                 {sepaMode && r.status === "offen" && (
                   <input type="checkbox" disabled={!sepaEligible} checked={!!(sepaEligible && r.selected !== false)}
@@ -341,6 +348,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                   : <button className="btn danger small" onClick={() => setConfirmDel(r.id)} title="Eintrag entfernen">✕</button>}
               </div>
 
+              {block && (
+                <div className="refund-msg"><span className="ico">⚠️</span>{block.msg}</div>
+              )}
+
               <div className="refund-grid">
                 {isErstattung && (
                   <label className="f"><span>Zahlart</span>
@@ -348,12 +359,12 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                       {methodLabel(r.method)} <span className="lock-ico">🔒</span>
                     </div></label>
                 )}
-                <label className="f"><span>{isErstattung ? "Gezahlt (€)" : "Betrag (€)"}</span>
+                <label className={`f ${block?.field === "paid" ? "err" : ""}`}><span>{isErstattung ? "Gezahlt (€)" : "Betrag (€)"}</span>
                   <input className="mono" type="text" value={r.paid} placeholder="0,00"
                     onChange={(e) => patchRow(r.id, { paid: e.target.value })} />
                   {!isEur && <span className="pill warn">{r.currency} – kein SEPA</span>}</label>
                 {sepaMode && (
-                  <label className="f col-wide"><span>IBAN</span>
+                  <label className={`f col-wide ${block?.field === "iban" ? "err" : ""}`}><span>IBAN</span>
                     <input className="mono" type="text" value={r.iban} placeholder="DE…"
                       onChange={(e) => onIbanChange(r.id, e.target.value)} />
                     {r.ibanValid
@@ -362,7 +373,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                   </label>
                 )}
                 {isErstattung && (
-                  <label className="f"><span>Erstattungsart</span>
+                  <label className={`f ${block?.field === "amount" ? "err" : ""}`}><span>Erstattungsart</span>
                     <div className="refund-art">
                       <select value={r.mode} onChange={(e) => patchRow(r.id, { mode: e.target.value })}>
                         {REFUND_MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
