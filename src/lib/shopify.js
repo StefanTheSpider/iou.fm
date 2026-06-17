@@ -49,6 +49,10 @@ export function parseOrderNode(node) {
   const amount = parseFloat(money.amount || "0");
   const title = node.lineItems?.edges?.[0]?.node?.title || "";
   const eventShort = deriveEventLabel(title);
+  // Bezahl-Status: nur wenn das Geld tatsächlich eingegangen ist, darf erstattet werden.
+  // PAID/PARTIALLY_PAID/(PARTIALLY_)REFUNDED = Geld war da; PENDING/AUTHORIZED/VOIDED/EXPIRED = nie bezahlt.
+  const fin = String(node.displayFinancialStatus || "").toUpperCase();
+  const paid = fin ? ["PAID", "PARTIALLY_PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(fin) : undefined;
   return {
     orderName,
     orderNumber,
@@ -58,6 +62,8 @@ export function parseOrderNode(node) {
     eventTitle: title,
     eventShort,
     method: methodFromGateways(node.paymentGatewayNames),
+    financialStatus: fin,
+    paid,                       // true | false | undefined (unbekannt)
     suggestedPurpose: `Erstattung ${orderNumber} ${eventShort}`.trim(),
   };
 }
@@ -69,6 +75,7 @@ query($q: String!) {
       node {
         name
         paymentGatewayNames
+        displayFinancialStatus
         customer { displayName }
         billingAddress { name firstName lastName }
         shippingAddress { name }

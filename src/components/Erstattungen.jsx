@@ -75,6 +75,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const [lastSepa, setLastSepa] = useState(null); // { xml, filename } – für optionalen EBICS-Versand
   const [confirmDel, setConfirmDel] = useState(null);
   const [warnOrder, setWarnOrder] = useState(null); // { o, cancelled, refunded } – Doppelzahlungs-Warnung
+  const [blockOrder, setBlockOrder] = useState(null); // per Überweisung bestellt, NIE bezahlt → harte Sperre
 
   // Alle Änderungen laufen über data.refunds → der Speichern-Button erscheint.
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
@@ -112,6 +113,12 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     setBusy(true);
     try {
       const o = await fetchOrder({ platform, config: ecoConfig, orderNumber: num });
+      // Harte Sperre: per Überweisung bestellt UND nie als bezahlt markiert → wir haben das
+      // Geld nie erhalten, also darf gar keine Erstattung erfasst werden (kein „trotzdem“).
+      if (o.method === "ueberweisung" && o.paid === false) {
+        setBlockOrder(o);
+        return;
+      }
       const cancelled = cancelInfo(num);
       const refunded = refundedInfo(num);
       const inList = rows.some((x) => norm(x.orderNumber) === norm(o.orderNumber)); // schon in der Liste?
@@ -412,6 +419,38 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
           onCancel={() => setWarnOrder(null)}
           onConfirm={() => { addRowFromOrder(warnOrder.o); setWarnOrder(null); }} />
       )}
+
+      {blockOrder && (
+        <UnpaidBlockModal o={blockOrder} onClose={() => setBlockOrder(null)} />
+      )}
+    </div>
+  );
+}
+
+// Harte Sperre: Bestellung per Überweisung, aber nie als bezahlt markiert. Diese
+// Bestellung darf NICHT erfasst werden – sonst zahlen wir Geld zurück, das nie eingegangen ist.
+// Bewusst KEIN „Trotzdem hinzufügen“.
+function UnpaidBlockModal({ o, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onClose}>
+      <div className="card" style={{ width: 560, maxWidth: "94vw", border: "2px solid #ff5f5f", boxShadow: "0 20px 60px rgba(0,0,0,.6)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 40, lineHeight: 1, marginBottom: 6 }}>⛔</div>
+        <h2 style={{ marginTop: 0, color: "#ff7b7b" }}>Keine Erstattung möglich – nie bezahlt</h2>
+        <p style={{ fontSize: 15 }}>
+          Bestellung <strong>{o.orderName || o.orderNumber}</strong>{o.customerName ? <> ({o.customerName})</> : ""} wurde
+          <strong> per Überweisung</strong> bestellt und ist im Shop <strong>nie als bezahlt markiert</strong>
+          {o.financialStatus ? <> (Status: {o.financialStatus})</> : ""}.
+        </p>
+        <p className="note" style={{ fontSize: 14 }}>
+          Für diese Bestellung ist <strong>kein Geld eingegangen</strong>. Eine Erstattung würde bedeuten, Geld
+          auszuzahlen, das wir nie erhalten haben – deshalb lässt sich dieser Eintrag <strong>nicht</strong> erfassen.
+          Falls das Geld doch eingegangen ist, markiere die Bestellung erst im Shop als „bezahlt“ und versuche es dann erneut.
+        </p>
+        <div className="toolbar" style={{ marginBottom: 0, marginTop: 8 }}>
+          <div className="spacer" />
+          <button className="btn" onClick={onClose}>Verstanden</button>
+        </div>
+      </div>
     </div>
   );
 }
