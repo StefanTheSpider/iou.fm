@@ -119,18 +119,25 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         setBlockOrder(o);
         return;
       }
-      const cancelled = cancelInfo(num);
+      // Storniert? Aus dem iou-Feed ODER direkt aus der Shopify-Bestellung (cancelledAt).
+      let cancelled = cancelInfo(num);
+      if (!cancelled && o.cancelledAt) cancelled = { date: o.cancelledAt };
       // Erstattung erkennen: zuerst aus dem iou-Feed; falls dort nichts steht, aber die
-      // Shopify-Bestellung selbst eine (Teil-)Erstattung ausweist (z. B. 100 € Kulanz oder
-      // längst rücküberwiesen, nur nicht in iou erfasst) → trotzdem warnen und prüfen lassen.
+      // Shopify-Bestellung selbst eine (Teil-)Erstattung ausweist (Betrag ODER Status
+      // REFUNDED/PARTIALLY_REFUNDED – z. B. 100 € Kulanz oder längst rücküberwiesen,
+      // nur nicht in iou erfasst) → trotzdem warnen und prüfen lassen.
       let refunded = refundedInfo(num);
-      if (!refunded && o.refundedCents > 0) {
-        refunded = { amountCents: o.refundedCents, date: null, source: "Shopify (Bestellung)" };
+      if (!refunded && o.refundedInShop) {
+        refunded = { amountCents: o.refundedCents || 0, date: null, source: "Shopify (Bestellung)" };
       }
+      // Streitfall/Chargeback (Rückbuchung): verloren = Geld bereits zurück; offen = ungeklärt,
+      // bei Überweisung droht doppelter Verlust, falls der Streitfall ebenfalls zugunsten Kund:in ausgeht.
+      const dispute = o.disputeReturned ? { kind: "returned", status: o.disputeStatus }
+        : o.disputeOpen ? { kind: "open", status: o.disputeStatus } : null;
       const inList = rows.some((x) => norm(x.orderNumber) === norm(o.orderNumber)); // schon in der Liste?
-      if (cancelled || refunded || inList) {
+      if (cancelled || refunded || inList || dispute) {
         // Doppelzahlungs-Schutz: erst bewusst bestätigen, sonst NICHT übernehmen.
-        setWarnOrder({ o, cancelled, refunded, inList });
+        setWarnOrder({ o, cancelled, refunded, inList, dispute });
       } else {
         addRowFromOrder(o);
       }
@@ -463,7 +470,7 @@ function UnpaidBlockModal({ o, onClose }) {
 
 // Dicke Warnung: Bestellung wurde bereits erstattet/storniert -> Doppelzahlungs-Schutz.
 function AlreadyPaidModal({ info, onCancel, onConfirm }) {
-  const { o, cancelled, refunded, inList } = info;
+  const { o, cancelled, refunded, inList, dispute } = info;
   const d = (x) => (x ? new Date(x).toLocaleDateString("de-DE") : "");
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 80, padding: 20 }} onClick={onCancel}>
@@ -478,6 +485,14 @@ function AlreadyPaidModal({ info, onCancel, onConfirm }) {
           {refunded && cancelled ? " und" : ""}
           {cancelled ? <> bereits <strong>storniert</strong>{cancelled.date ? <> am {d(cancelled.date)}</> : ""}</> : ""}.
         </p>
+        {dispute && (
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#ff7b7b", background: "rgba(255,95,95,.12)",
+            border: "1px solid #ff5f5f", borderRadius: 8, padding: "10px 12px" }}>
+            {dispute.kind === "returned"
+              ? <>⛔ Zu dieser Bestellung gibt es einen <strong>verlorenen Streitfall / eine Rückbuchung</strong>{dispute.status ? <> ({dispute.status})</> : ""} – das Geld ist darüber bereits an die Kund:in zurückgegangen. Eine erneute Überweisung wäre ein <strong>doppelter Verlust</strong>.</>
+              : <>⚠️ Zu dieser Bestellung läuft ein <strong>offener Streitfall / eine Anfrage</strong>{dispute.status ? <> ({dispute.status})</> : ""} – der Fall ist <strong>noch ungeklärt</strong>. Wenn du jetzt überweist und der Streitfall später zugunsten der Kund:in ausgeht, verlierst du das Geld <strong>ein zweites Mal</strong>. Erst klären, dann zahlen.</>}
+          </p>
+        )}
         <p className="note" style={{ fontSize: 14 }}>
           {refunded ? <><strong>Bitte den Fall genau prüfen</strong>, bevor du fortfährst – z. B. ob die Teil-/Kulanz-Erstattung von {refunded.amountCents ? <strong>{formatEur(refunded.amountCents)}</strong> : "diesem Betrag"} bereits den ganzen Vorgang abdeckt. </> : null}
           Wenn du sie erneut hinzufügst, riskierst du eine <strong>Doppel-Erstattung</strong>. Das kommt vor – aber bitte nur bewusst.

@@ -57,6 +57,13 @@ export function parseOrderNode(node) {
   // Bestellung, damit auch Rückerstattungen erkannt werden, die noch nicht im iou-Feed stehen.
   const refundedAmt = parseFloat(node.totalRefundedSet?.shopMoney?.amount || "0");
   const refundedCents = Math.max(0, Math.round((Number.isFinite(refundedAmt) ? refundedAmt : 0) * 100));
+  // Streitfälle / Chargebacks (Rückbuchungen). LOST/ACCEPTED/CHARGE_REFUNDED = Geld
+  // ist bereits zur Kund:in zurück; NEEDS_RESPONSE/UNDER_REVIEW = offener Streitfall.
+  const disputes = Array.isArray(node.disputes) ? node.disputes : [];
+  const dstat = disputes.map((d) => String(d.status || "").toUpperCase());
+  const disputeReturned = dstat.some((s) => ["LOST", "ACCEPTED", "CHARGE_REFUNDED"].includes(s));
+  const disputeOpen = dstat.some((s) => ["NEEDS_RESPONSE", "UNDER_REVIEW"].includes(s));
+  const disputeStatus = dstat[0] || "";
   return {
     orderName,
     orderNumber,
@@ -69,28 +76,40 @@ export function parseOrderNode(node) {
     financialStatus: fin,
     paid,                       // true | false | undefined (unbekannt)
     refundedCents,              // im Shop bereits erstatteter Betrag (0 = keiner)
+    // im Shop bereits (teil-)erstattet? Betrag ODER Status reichen als Signal.
+    refundedInShop: refundedCents > 0 || ["REFUNDED", "PARTIALLY_REFUNDED"].includes(fin),
+    cancelledAt: node.cancelledAt || null,   // in Shopify storniert?
+    hasDispute: disputes.length > 0,
+    disputeReturned,            // Streitfall/Chargeback verloren → Geld bereits zurück
+    disputeOpen,                // offener Streitfall
+    disputeStatus,
     suggestedPurpose: `Erstattung ${orderNumber} ${eventShort}`.trim(),
   };
 }
 
-const ORDER_QUERY = `
-query($q: String!) {
-  orders(first: 1, query: $q) {
-    edges {
-      node {
+// Felder ohne Disputes (immer erlaubt) ...
+const BASE_FIELDS = `
         name
         paymentGatewayNames
         displayFinancialStatus
+        cancelledAt
         customer { displayName }
         billingAddress { name firstName lastName }
         shippingAddress { name }
         totalPriceSet { shopMoney { amount currencyCode } }
         totalRefundedSet { shopMoney { amount currencyCode } }
-        lineItems(first: 3) { edges { node { title quantity } } }
-      }
-    }
+        lineItems(first: 3) { edges { node { title quantity } } }`;
+// ... plus Disputes/Chargebacks (braucht read_shopify_payments_disputes; sonst Fallback).
+const DISPUTE_FIELDS = `
+        disputes { id initiatedAs status }`;
+const buildQuery = (withDisputes) => `
+query($q: String!) {
+  orders(first: 1, query: $q) {
+    edges { node {${BASE_FIELDS}${withDisputes ? DISPUTE_FIELDS : ""}} }
   }
 }`;
+const ORDER_QUERY_FULL = buildQuery(true);
+const ORDER_QUERY_BASE = buildQuery(false);
 
 // Im Dev-Modus (Browser) läuft der Aufruf über den lokalen Proxy (umgeht CORS,
 // Token bleibt serverseitig). In der Tauri-Desktop-App / Produktion wird Shopify
@@ -137,17 +156,32 @@ export async function fetchShopifyOrder({ domain, token, orderNumber, fetchImpl 
   } else {
     // Desktop (Tauri) / Produktion: direkter Aufruf, kein CORS.
     const url = `https://${domain.replace(/^https?:\/\//, "").replace(/\/$/, "")}/admin/api/${API_VERSION}/graphql.json`;
-    try {
-      res = await doFetch(url, {
+    const post = async (query) => {
+      const r = await doFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
-        body: JSON.stringify({ query: ORDER_QUERY, variables: { q: `name:${num}` } }),
+        body: JSON.stringify({ query, variables: { q: `name:${num}` } }),
       });
+      if (!r.ok) throw new Error(`Shopify-Fehler ${r.status}`);
+      return r.json();
+    };
+    let json;
+    try {
+      json = await post(ORDER_QUERY_FULL);
     } catch (e) {
       throw new Error("Verbindung zu Shopify fehlgeschlagen.");
     }
+    // Fehlt dem Token die Dispute-Leseberechtigung, meldet Shopify einen Feld-Fehler →
+    // ohne Disputes erneut abfragen, damit der Import trotzdem funktioniert.
+    if (json?.errors?.length) {
+      try { json = await post(ORDER_QUERY_BASE); } catch { /* ersten Stand behalten */ }
+    }
+    const node = json?.data?.orders?.edges?.[0]?.node;
+    if (!node) throw new Error(`Bestellung ${num} nicht gefunden.`);
+    return parseOrderNode(node);
   }
 
+  // Nur der DEV-Proxy-Pfad erreicht diese Zeilen.
   if (!res.ok) throw new Error(`Shopify-Fehler ${res.status}`);
   const json = await res.json();
   const node = json?.data?.orders?.edges?.[0]?.node;
