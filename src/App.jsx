@@ -469,7 +469,7 @@ export default function App() {
         {saved && <span className="save-indicator show">✓ Gespeichert</span>}
         {dirty && (
           <button className="btn" onClick={commit} style={{ boxShadow: "0 0 0 3px rgba(231,177,90,.25)", fontWeight: 700 }} title="Noch nicht gespeicherte Änderungen jetzt sichern">
-            💾 {dirtyCount > 1 ? `Alle Änderungen speichern (${dirtyCount})` : "Änderung speichern"}
+            💾 {dirtyCount > 1 ? "Änderungen speichern" : "Änderung speichern"}
           </button>
         )}
         <button className="lock-btn" onClick={() => setThemeMode(effectiveTheme.mode === "light" ? "dark" : "light")} title="Hell/Dunkel umschalten (nur für dich, auf diesem Gerät)" aria-label="Darstellung umschalten">

@@ -53,6 +53,10 @@ export function parseOrderNode(node) {
   // PAID/PARTIALLY_PAID/(PARTIALLY_)REFUNDED = Geld war da; PENDING/AUTHORIZED/VOIDED/EXPIRED = nie bezahlt.
   const fin = String(node.displayFinancialStatus || "").toUpperCase();
   const paid = fin ? ["PAID", "PARTIALLY_PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(fin) : undefined;
+  // Bereits im Shop erstatteter Betrag (auch Teil-/Kulanz-Erstattungen) – direkt aus der
+  // Bestellung, damit auch Rückerstattungen erkannt werden, die noch nicht im iou-Feed stehen.
+  const refundedAmt = parseFloat(node.totalRefundedSet?.shopMoney?.amount || "0");
+  const refundedCents = Math.max(0, Math.round((Number.isFinite(refundedAmt) ? refundedAmt : 0) * 100));
   return {
     orderName,
     orderNumber,
@@ -64,6 +68,7 @@ export function parseOrderNode(node) {
     method: methodFromGateways(node.paymentGatewayNames),
     financialStatus: fin,
     paid,                       // true | false | undefined (unbekannt)
+    refundedCents,              // im Shop bereits erstatteter Betrag (0 = keiner)
     suggestedPurpose: `Erstattung ${orderNumber} ${eventShort}`.trim(),
   };
 }
@@ -80,6 +85,7 @@ query($q: String!) {
         billingAddress { name firstName lastName }
         shippingAddress { name }
         totalPriceSet { shopMoney { amount currencyCode } }
+        totalRefundedSet { shopMoney { amount currencyCode } }
         lineItems(first: 3) { edges { node { title quantity } } }
       }
     }

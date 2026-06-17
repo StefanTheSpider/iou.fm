@@ -120,7 +120,13 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         return;
       }
       const cancelled = cancelInfo(num);
-      const refunded = refundedInfo(num);
+      // Erstattung erkennen: zuerst aus dem iou-Feed; falls dort nichts steht, aber die
+      // Shopify-Bestellung selbst eine (Teil-)Erstattung ausweist (z. B. 100 € Kulanz oder
+      // längst rücküberwiesen, nur nicht in iou erfasst) → trotzdem warnen und prüfen lassen.
+      let refunded = refundedInfo(num);
+      if (!refunded && o.refundedCents > 0) {
+        refunded = { amountCents: o.refundedCents, date: null, source: "Shopify (Bestellung)" };
+      }
       const inList = rows.some((x) => norm(x.orderNumber) === norm(o.orderNumber)); // schon in der Liste?
       if (cancelled || refunded || inList) {
         // Doppelzahlungs-Schutz: erst bewusst bestätigen, sonst NICHT übernehmen.
@@ -473,6 +479,7 @@ function AlreadyPaidModal({ info, onCancel, onConfirm }) {
           {cancelled ? <> bereits <strong>storniert</strong>{cancelled.date ? <> am {d(cancelled.date)}</> : ""}</> : ""}.
         </p>
         <p className="note" style={{ fontSize: 14 }}>
+          {refunded ? <><strong>Bitte den Fall genau prüfen</strong>, bevor du fortfährst – z. B. ob die Teil-/Kulanz-Erstattung von {refunded.amountCents ? <strong>{formatEur(refunded.amountCents)}</strong> : "diesem Betrag"} bereits den ganzen Vorgang abdeckt. </> : null}
           Wenn du sie erneut hinzufügst, riskierst du eine <strong>Doppel-Erstattung</strong>. Das kommt vor – aber bitte nur bewusst.
         </p>
         <div className="toolbar" style={{ marginBottom: 0, marginTop: 8 }}>
