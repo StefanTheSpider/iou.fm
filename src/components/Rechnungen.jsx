@@ -3,6 +3,7 @@ import { parseAmount, formatEur } from "../lib/money.js";
 import { validateIban, cleanIban, formatIban, inspectIban } from "../lib/iban.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import { extractInvoice } from "../lib/invoicePdf.js";
+import { fetchMailInvoices } from "../lib/mailInvoices.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
 import { toastError } from "../lib/toast.js";
 
@@ -50,7 +51,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const [saved, setSaved] = useState("");
   const [belegMsg, setBelegMsg] = useState("");
   const [scan, setScan] = useState("");             // OCR-Fortschritt (gescannte PDFs)
-  const [mailBusy, setMailBusy] = useState(false);  // E-Mail-Eingang wird geladen
+  const [mailBusy, setMailBusy] = useState(false);  // E-Mail-Eingang wird manuell geprüft
   const [lastSepa, setLastSepa] = useState(null);   // { xml, filename, batchId } – für EBICS-Versand
   const [showModal, setShowModal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -117,7 +118,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           amount: ex.amountCents ? (ex.amountCents / 100).toFixed(2) : "",
           invoiceNumber, dueDate: ex.dueDate || "",
           purpose: `Rechnung ${invoiceNumber}${creditorName ? " " + creditorName : ""}`.trim(),
-          skontoPct: "", note: "", status: "offen", selected: true,
+          skontoPct: "", note: "", status: "offen", selected: true, checked: false,
           createdBy: userName || "—", createdAt: today(),
         };
         if (keyMeaningful(invoiceNumber, iban)) seen.add(key);
@@ -140,50 +141,17 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   // Beleg-Archiv laden, LOKAL einlesen (E-Rechnung exakt, sonst Heuristik) und als
   // Entwürfe vorbereiten. Nicht-Rechnungen (Tickets, Bestellbestätigungen ohne IBAN)
   // werden übersprungen; Belege werden nur einmal verarbeitet.
+  // Manuelles „E-Mail-Eingang prüfen": liest neu weitergeleitete Rechnungen über dieselbe
+  // Lib ein wie der App-Hintergrund-Sync. Der automatische Import läuft app-weit (App.jsx) –
+  // beim Öffnen dieses Tabs sind die Rechnungen i. d. R. schon da; dies ist nur die manuelle
+  // Sofort-Prüfung mit Rückmeldung.
   async function importMailInvoices() {
     if (!mailbox) return;
     setError(""); setSaved(""); setScan("Suche eingegangene Rechnungen …");
     try {
-      const belege = await mailbox.belege();
-      const seen = new Set([...(rows || []).map((r) => r.belegId).filter(Boolean), ...((data.invoiceMailSeen) || [])]);
-      const ownNames = accounts.flatMap((a) => [a.name, a.label]).filter(Boolean);
-      const ownIbans = accounts.map((a) => a.iban).filter(Boolean);
-      // Inhaltliche Dubletten verhindern (gleiche Nr + IBAN + Betrag) – auch bei mehrfacher Weiterleitung.
-      const dupKeys = new Set((rows || []).map(rowKey).filter((k) => k !== "||0"));
-      const newRows = []; const newSeen = []; let dup = 0;
-      let failed = 0;
-      for (const b of (belege || [])) {
-        if (seen.has(b.id)) continue;
-        newSeen.push(b.id);
-        let files = [];
-        try { files = await mailbox.files(b.id); } catch { failed++; continue; }
-        // Echte Anhänge (PDF inkl. ZUGFeRD, oder reine XRechnung-XML) bevorzugt, sonst das Body-PDF.
-        const atts = files.filter((f) => /\.(pdf|xml)$/i.test(f.name) && !/_beleg\.pdf$/i.test(f.name));
-        const pick = atts.length ? atts : files.filter((f) => /_beleg\.pdf$/i.test(f.name));
-        for (const f of pick) {
-          setScan(`Lese „${(b.subject || b.from || "Beleg").slice(0, 40)}" …`);
-          let ab; try { ab = await mailbox.fileBytes(b.id, f.name); } catch { failed++; continue; }
-          const cleanName = f.name.replace(/^[0-9a-f-]{36}_/i, "");
-          const wrapper = { name: cleanName, arrayBuffer: () => Promise.resolve(ab.slice(0)) };
-          let ex; try { ex = await extractInvoice(wrapper, { ownNames, ownIbans }); } catch { failed++; continue; }
-          const iban = ex.iban ? cleanIban(ex.iban) : "";
-          if (!iban || !validateIban(iban).ok) continue; // ohne zahlbare IBAN keine Rechnung (Tickets etc. raus)
-          const invoiceNumber = ex.invoiceNumber || "";
-          const dKey = invoiceKey(invoiceNumber, iban, ex.amountCents);
-          if (dupKeys.has(dKey)) { dup++; continue; } // schon vorhanden → nicht zweimal anlegen
-          dupKeys.add(dKey);
-          const meta = await ibanMeta(iban);
-          const creditorName = (creditors[iban]?.name) || ex.creditorName || "";
-          newRows.push({
-            id: crypto.randomUUID(), belegId: b.id, fileName: cleanName, source: ex.source || "email",
-            creditorName, iban, ibanValid: meta.ibanValid, ibanReason: meta.ibanReason, bic: meta.bic || ex.bic || "",
-            amount: ex.amountCents ? (ex.amountCents / 100).toFixed(2) : "", invoiceNumber, dueDate: ex.dueDate || "",
-            purpose: `Rechnung ${invoiceNumber}${creditorName ? " " + creditorName : ""}`.trim(),
-            skontoPct: "", note: `per E-Mail von ${(b.from || "").slice(0, 80)}`, status: "offen",
-            selected: !(ex.paidHint || ex.noIban), createdBy: "E-Mail-Eingang", createdAt: today(),
-          });
-        }
-      }
+      const { newRows, newSeen, dup, failed } = await fetchMailInvoices({
+        mailbox, invoices: rows, creditors, accounts, seenIds: data.invoiceMailSeen || [],
+      });
       if (newRows.length || newSeen.length) {
         updateData((d) => ({
           ...d,
@@ -192,18 +160,15 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         }), true);
       }
       setScan("");
-      const failNote = failed ? ` ⚠ ${failed} Datei(en) konnten nicht gelesen werden.` : "";
-      if (failed && !newRows.length) fail(`${failed} eingegangene Datei(en) konnten nicht gelesen werden (beschädigt oder Server nicht erreichbar). Bitte erneut versuchen.`);
-      else if (newRows.length) {
-        setSaved(`✓ ${newRows.length} eingegangene Rechnung(en) eingelesen${dup ? ` · ${dup} Dublette(n) übersprungen` : ""}${failNote} – bitte prüfen, dann auszahlen.`);
-      } else if (dup) {
-        setSaved(`Keine neuen Rechnungen – ${dup} bereits vorhandene Rechnung(en) übersprungen (gleiche Nr. + IBAN + Betrag).`);
-      } else if (newSeen.length) {
-        setError(`${newSeen.length} neue(r) Beleg(e) eingegangen, aber ohne zahlbare IBAN – z. B. PayPal/Karte oder Tickets ohne Bankverbindung. Solche Belege sind nicht per SEPA zahlbar (liegen aber im Beleg-Archiv).`);
-      } else {
-        setSaved("Keine neuen Belege im E-Mail-Eingang gefunden. (Schon eingelesene werden nicht erneut angezeigt.)");
-      }
-    } catch (e) { setScan(""); fail("E-Mail-Eingang konnte nicht geladen werden: " + (e.message || "")); }
+      const failNote = failed ? ` · ⚠ ${failed} Datei(en) nicht lesbar` : "";
+      if (newRows.length) setSaved(`✓ ${newRows.length} neue Rechnung${newRows.length === 1 ? "" : "en"} eingelesen${dup ? ` · ${dup} Dublette(n) übersprungen` : ""}${failNote} – bitte unten prüfen, dann auszahlen.`);
+      else if (newSeen.length) setSaved(`${newSeen.length} weitergeleitete(r) Beleg(e) eingegangen, aber ohne zahlbare IBAN (z. B. Tickets, PayPal/Karte) – liegen im Beleg-Archiv.`);
+      else if (failed) fail(`${failed} eingegangene Datei(en) konnten nicht gelesen werden (beschädigt oder Server nicht erreichbar). Bitte erneut versuchen.`);
+      else if (dup) setSaved(`Keine neuen Rechnungen – ${dup} bereits vorhandene übersprungen (gleiche Nr. + IBAN + Betrag).`);
+      else setSaved("Keine neuen Belege im E-Mail-Eingang gefunden. (Schon eingelesene werden nicht erneut angezeigt.)");
+    } catch (e) {
+      setScan(""); fail("E-Mail-Eingang konnte nicht geladen werden: " + (e.message || ""));
+    }
   }
 
   async function onIbanChange(id, value) {
@@ -217,10 +182,14 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     const sk = Number(r.skontoPct) || 0;
     return opts.skonto && sk > 0 ? Math.round(base * (1 - sk / 100)) : base;
   }
-  const computed = rows.map((r) => ({ r, cents: rowCents(r), eligible: r.status === "offen" && r.ibanValid && rowCents(r) > 0 && r.selected !== false }));
+  // Eine Rechnung ist erst zahlbar, wenn sie als GEPRÜFT markiert wurde (r.checked).
+  // So landet nichts Ungeprüftes in der SEPA-Datei oder im EBICS-Versand.
+  const computed = rows.map((r) => ({ r, cents: rowCents(r), eligible: r.status === "offen" && r.ibanValid && rowCents(r) > 0 && r.selected !== false && r.checked === true }));
   const eligible = computed.filter((c) => c.eligible);
   const sumEligible = eligible.reduce((s, c) => s + c.cents, 0);
   const visible = computed.filter(({ r }) => fStatus === "alle" || r.status === fStatus);
+  // Wie viele offene Rechnungen warten noch auf die Prüfung? (Banner-Hinweis)
+  const toCheck = rows.filter((r) => r.status === "offen" && !r.checked).length;
 
   function defaultExecDate() {
     if (opts.useDueDate) {
@@ -356,12 +325,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       <h1>Rechnungen</h1>
       <p className="sub">Rechnungs-PDFs einlesen, Zahlungsdaten prüfen und als eine SEPA-Datei auszahlen. E-Rechnungen (ZUGFeRD/XRechnung) werden exakt gelesen, sonst per Mustererkennung – immer mit Kontrolle.</p>
 
+      {toCheck > 0 && (
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, border: "1.5px solid var(--amber)", background: "rgba(231,177,90,.12)" }}>
+          <span style={{ fontSize: 20 }}>📋</span>
+          <div style={{ flex: 1, fontWeight: 700, color: "var(--amber)" }}>
+            {toCheck} Rechnung{toCheck === 1 ? "" : "en"} {toCheck === 1 ? "wartet" : "warten"} auf deine Prüfung – erst nach „✓ Geprüft" {toCheck === 1 ? "kann sie" : "können sie"} per SEPA/EBICS ausgezahlt werden.
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="toolbar" style={{ marginTop: 0 }}>
           <input ref={fileRef} type="file" accept="application/pdf,.pdf,application/xml,text/xml,.xml" multiple style={{ display: "none" }}
             onChange={(e) => addFiles(e.target.files)} />
           <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy || mailBusy}>{busy ? "Lese …" : "Rechnungs-PDFs laden"}</button>
-          {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Per E-Mail an deine belege-Adresse weitergeleitete Rechnungen einlesen">{mailBusy ? "Lade Eingang …" : "Eingegangene Rechnungen laden"}</button>}
+          {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Wird beim Öffnen automatisch geprüft – hier kannst du erneut auf neu weitergeleitete Rechnungen prüfen">{mailBusy ? "Prüfe Eingang …" : "E-Mail-Eingang prüfen"}</button>}
           {onSendBelege && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater senden">An Steuerberater senden</button>}
           <span className="note">Mehrere PDFs auf einmal möglich. E-Rechnungen (ZUGFeRD/XRechnung) werden exakt gelesen.</span>
         </div>
@@ -400,15 +378,20 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       </div>
 
       {visible.map(({ r, cents }) => (
-        <div className="card" key={r.id}>
+        <div className="card" key={r.id} style={r.status === "offen" && !r.checked ? { borderLeft: "4px solid var(--amber)" } : undefined}>
           <div className="toolbar" style={{ marginTop: 0, alignItems: "center" }}>
-            {r.status === "offen" && <input type="checkbox" checked={r.selected !== false} onChange={(e) => patchRow(r.id, { selected: e.target.checked })} />}
+            {r.status === "offen" && <input type="checkbox" checked={r.selected !== false} onChange={(e) => patchRow(r.id, { selected: e.target.checked })} title="In die SEPA-Datei aufnehmen (nur möglich, wenn geprüft)" />}
             <strong>{r.creditorName || "— Lieferant —"}</strong>
             <span className="pill">{r.source === "e-rechnung" ? "E-Rechnung" : "PDF"}</span>
             {r.invoiceNumber && <span className="note">Nr. {r.invoiceNumber}</span>}
             {r.createdBy && <span className="note">· erfasst von {r.createdBy}</span>}
             <div className="spacer" />
             <span className="refund-amount ok">{formatEur(cents)}</span>
+            {r.status === "offen" && (
+              r.checked
+                ? <button className="pill ok" style={{ border: "none", cursor: "pointer" }} onClick={() => patchRow(r.id, { checked: false })} title="Prüfung zurücknehmen">✓ Geprüft</button>
+                : <button className="pill warn" style={{ border: "none", cursor: "pointer", fontWeight: 700 }} onClick={() => patchRow(r.id, { checked: true })} title="Erst nach Prüfung kann diese Rechnung ausgezahlt werden">Als geprüft markieren</button>
+            )}
             <span className={`pill ${r.status === "offen" ? "warn" : "ok"}`}>{r.status}</span>
             <button className="btn ghost small" onClick={() => setConfirmDel(r.id)}>✕</button>
           </div>

@@ -13,6 +13,8 @@ import Toaster from "./components/Toaster.jsx";
 import { saveVault, restoreSession, clearSession, addUser as vaultAddUser, removeUser as vaultRemoveUser, enableBiometric, bioAvailable, bioEnabledUser } from "./lib/vault.js";
 import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
+import { fetchMailInvoices } from "./lib/mailInvoices.js";
+import { toast } from "./lib/toast.js";
 import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege, getBelegFiles, openBelegFile, fetchBelegFileBytes, uploadRechnungBelege, sendRechnungBelege } from "./lib/feed.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics, getOwnerCustomers } from "./lib/billing.js";
@@ -356,6 +358,40 @@ export default function App() {
     openFile: (beId, name) => openBelegFile(sessionRef.current, beId, name),
     fileBytes: (beId, name) => fetchBelegFileBytes(sessionRef.current, beId, name),
   }), []);
+
+  // Per E-Mail weitergeleitete Rechnungen automatisch im Hintergrund einlesen – sobald sie
+  // eingehen, nicht erst beim Öffnen des Rechnungen-Tabs. Idempotent (Dubletten-/Seen-Schutz).
+  const mailSyncBusy = useRef(false);
+  const syncMailInvoices = useCallback(async () => {
+    const s = sessionRef.current;
+    if (!s?.tenantId || s.currentUser?.support || mailSyncBusy.current) return;
+    mailSyncBusy.current = true;
+    try {
+      const d = s.data || {};
+      const { newRows, newSeen } = await fetchMailInvoices({
+        mailbox: inbox, invoices: d.invoices || [], creditors: d.creditors || {},
+        accounts: d.accounts || [], seenIds: d.invoiceMailSeen || [],
+      });
+      if (newRows.length || newSeen.length) {
+        updateData((dd) => ({
+          ...dd,
+          invoices: [...newRows, ...(dd.invoices || [])],
+          invoiceMailSeen: [...((dd.invoiceMailSeen) || []), ...newSeen].slice(-3000),
+        }), true);
+        if (newRows.length) toast(`📥 ${newRows.length} neue Rechnung${newRows.length === 1 ? "" : "en"} per E-Mail eingegangen – bitte im Rechnungen-Tab prüfen.`);
+      }
+    } catch { /* offline → beim nächsten Mal */ }
+    finally { mailSyncBusy.current = false; }
+  }, [inbox, updateData]);
+
+  useEffect(() => {
+    if (!session?.tenantId) return;
+    const t = setTimeout(syncMailInvoices, 1500);          // kurz nach Login
+    const iv = setInterval(syncMailInvoices, 90 * 1000);   // danach laufend
+    const onFocus = () => syncMailInvoices();              // beim Zurückkommen ins Fenster
+    window.addEventListener("focus", onFocus);
+    return () => { clearTimeout(t); clearInterval(iv); window.removeEventListener("focus", onFocus); };
+  }, [session?.tenantId, syncMailInvoices]);
 
   // Abo/Lizenz-Aktionen für die Stammdaten-Oberfläche.
   const billing = useMemo(() => ({

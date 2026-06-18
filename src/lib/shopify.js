@@ -20,16 +20,21 @@ export function deriveEventLabel(title) {
   return parts[0] || "";
 }
 
-// Leitet die Zahlart aus den Shopify-Payment-Gateways ab (festgeschrieben, da Fakt).
-export function methodFromGateways(gateways = []) {
-  const g = (gateways || []).map((x) => String(x).toLowerCase()).join(" ");
-  if (g.includes("paypal")) return "paypal";
+// Leitet die Zahlart aus ALLEN verfügbaren Signalen ab. Wichtig: Klarna/PayPal laufen oft
+// ÜBER Shopify Payments – dann steht im Gateway nur „shopify_payments". Die echte Methode
+// steckt in den Transaktionen (paymentIcon.altText z. B. „klarna_pay_later", „visa", „paypal").
+export function methodFromSignals(signals = []) {
+  const g = (signals || []).filter(Boolean).map((x) => String(x).toLowerCase()).join(" ");
   if (g.includes("klarna")) return "klarna";
-  if (g.includes("gift")) return "gutschein";
-  if (g.includes("shopify_payments") || g.includes("stripe") || g.includes("card") ||
-      g.includes("credit") || g.includes("mollie") || g.includes("adyen") || g.includes("amazon")) return "kreditkarte";
-  // bank / sepa / überweisung / manual / vorkasse -> SEPA
+  if (g.includes("paypal")) return "paypal";
+  if (g.includes("gift") || g.includes("gutschein") || g.includes("voucher")) return "gutschein";
+  if (/(visa|master|amex|american[_ ]?express|maestro|discover|jcb|\bcard\b|credit|kredit|stripe|mollie|adyen|amazon|apple[_ ]?pay|google[_ ]?pay|shopify_payments)/.test(g)) return "kreditkarte";
+  // bank / sepa / überweisung / manual / vorkasse / rechnung -> SEPA-Rückzahlung
   return "ueberweisung";
+}
+// Rückwärtskompatibel: nur aus den Gateway-Namen (ohne Transaktionsdetails).
+export function methodFromGateways(gateways = []) {
+  return methodFromSignals(gateways);
 }
 
 // Parst einen GraphQL-Order-Node in das von der App genutzte Format.
@@ -72,7 +77,12 @@ export function parseOrderNode(node) {
     currency: money.currencyCode || "EUR",
     eventTitle: title,
     eventShort,
-    method: methodFromGateways(node.paymentGatewayNames),
+    // Zahlart aus Gateway + Transaktionsdetails (paymentIcon.altText etc.) ableiten,
+    // damit Klarna/PayPal über Shopify Payments nicht als „Kreditkarte" erscheinen.
+    method: methodFromSignals([
+      ...(node.paymentGatewayNames || []),
+      ...((node.transactions || []).flatMap((t) => [t.gateway, t.formattedGateway, t.paymentIcon?.altText])),
+    ]),
     financialStatus: fin,
     paid,                       // true | false | undefined (unbekannt)
     refundedCents,              // im Shop bereits erstatteter Betrag (0 = keiner)
@@ -98,6 +108,7 @@ const BASE_FIELDS = `
         shippingAddress { name }
         totalPriceSet { shopMoney { amount currencyCode } }
         totalRefundedSet { shopMoney { amount currencyCode } }
+        transactions(first: 5) { gateway formattedGateway paymentIcon { altText } }
         lineItems(first: 3) { edges { node { title quantity } } }`;
 // ... plus Disputes/Chargebacks (braucht read_shopify_payments_disputes; sonst Fallback).
 const DISPUTE_FIELDS = `
