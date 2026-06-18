@@ -190,7 +190,16 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   // eingegangene Belege („E-Mail-Eingang") sind für alle sichtbar.
   const adminLoaded = (r) => r.createdByRole === "admin" || (!r.createdByRole && r.createdBy && r.createdBy !== "E-Mail-Eingang");
   const canSee = (r) => canPay || !adminLoaded(r);
-  const computed = rows.map((r) => ({ r, cents: rowCents(r), eligible: r.status === "offen" && r.ibanValid && rowCents(r) > 0 && r.selected !== false && r.checked === true }));
+  // Pflichtfeld-Prüfung: auch „Geprüft = Ja" darf NICHT auszahlbar machen, wenn etwas fehlt
+  // (z. B. Lieferant nicht erkannt). block = { field, msg } für rote Markierung + Meldung.
+  const blockOf = (r, cents) => !r.ibanValid ? { field: "iban", msg: "IBAN fehlt oder ist ungültig" }
+    : !(cents > 0) ? { field: "amount", msg: "Betrag fehlt" }
+    : !String(r.creditorName || "").trim() ? { field: "creditor", msg: "Lieferant fehlt" } : null;
+  const computed = rows.map((r) => {
+    const cents = rowCents(r);
+    const block = blockOf(r, cents);
+    return { r, cents, block, eligible: r.status === "offen" && r.selected !== false && r.checked === true && !block };
+  });
   const visibleAll = computed.filter(({ r }) => canSee(r));
   const eligible = visibleAll.filter((c) => c.eligible);
   const sumEligible = eligible.reduce((s, c) => s + c.cents, 0);
@@ -399,10 +408,16 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         <span className="muted">{visible.length} Einträge</span>
       </div>
 
-      {visible.map(({ r, cents }) => (
-        <div className="card" key={r.id} style={r.status === "offen" && !r.checked ? { borderLeft: "4px solid var(--amber)" } : undefined}>
+      {visible.map(({ r, cents, block }) => {
+        // Auf „Ja" gesetzt, aber Pflichtfeld fehlt → harte Sperre + rote Markierung.
+        const flagged = r.status === "offen" && r.selected !== false && r.checked && !!block;
+        const cardStyle = flagged ? { border: "2px solid var(--red)", boxShadow: "0 0 0 1px var(--red)" }
+          : (r.status === "offen" && !r.checked ? { borderLeft: "4px solid var(--amber)" } : undefined);
+        const errBox = (field) => (flagged && block.field === field) ? { border: "2px solid var(--red)", background: "var(--red-bg)" } : undefined;
+        return (
+        <div className="card" key={r.id} style={cardStyle}>
           <div className="toolbar" style={{ marginTop: 0, alignItems: "center" }}>
-            {r.status === "offen" && <input type="checkbox" checked={r.selected !== false} onChange={(e) => patchRow(r.id, { selected: e.target.checked })} title="In die SEPA-Datei aufnehmen (nur möglich, wenn geprüft)" />}
+            {r.status === "offen" && <input type="checkbox" checked={r.selected !== false} onChange={(e) => patchRow(r.id, { selected: e.target.checked })} title="In die SEPA-Datei aufnehmen (nur möglich, wenn geprüft und vollständig)" />}
             <strong>{r.creditorName || "— Lieferant —"}</strong>
             <span className="pill">{r.source === "e-rechnung" ? "E-Rechnung" : "PDF"}</span>
             {r.invoiceNumber && <span className="note">Nr. {r.invoiceNumber}</span>}
@@ -410,22 +425,29 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
             <div className="spacer" />
             <span className="refund-amount ok">{formatEur(cents)}</span>
             {r.status === "offen" && (
-              r.checked
-                ? <span className="pill ok" title={r.checkedBy ? `geprüft von ${r.checkedBy}` : "geprüft"}>✓ geprüft{r.checkedBy ? ` von ${r.checkedBy}` : ""}</span>
-                : <span className="pill warn">ungeprüft</span>
+              flagged
+                ? <span className="pill bad" style={{ fontWeight: 700 }}>⛔ unvollständig</span>
+                : r.checked
+                  ? <span className="pill ok" title={r.checkedBy ? `geprüft von ${r.checkedBy}` : "geprüft"}>✓ geprüft{r.checkedBy ? ` von ${r.checkedBy}` : ""}</span>
+                  : <span className="pill warn">ungeprüft</span>
             )}
             <span className={`pill ${r.status === "offen" ? "warn" : "ok"}`}>{r.status}</span>
             <button className="btn ghost small" onClick={() => setConfirmDel(r.id)}>✕</button>
           </div>
+          {flagged && (
+            <div style={{ margin: "10px 0 0", padding: "11px 14px", background: "var(--red-bg)", border: "1.5px solid var(--red)", borderRadius: 10, color: "var(--red)", fontWeight: 700, textAlign: "center" }}>
+              ⛔ Als geprüft markiert, aber noch unvollständig: {block.msg}. Diese Rechnung wird NICHT ausgezahlt – bitte zuerst korrigieren.
+            </div>
+          )}
           <div className="row">
             <label className="field"><span>Lieferant</span>
-              <input type="text" value={r.creditorName} onChange={(e) => patchRow(r.id, { creditorName: e.target.value })} /></label>
+              <input type="text" value={r.creditorName} style={errBox("creditor")} placeholder={flagged && block.field === "creditor" ? "Lieferant fehlt – bitte eintragen" : ""} onChange={(e) => patchRow(r.id, { creditorName: e.target.value })} /></label>
             <label className="field" style={{ minWidth: 280 }}><span>IBAN</span>
-              <input type="text" value={r.iban} onChange={(e) => onIbanChange(r.id, e.target.value)} placeholder="DE…" />
+              <input type="text" value={r.iban} style={errBox("iban")} onChange={(e) => onIbanChange(r.id, e.target.value)} placeholder="DE…" />
               <span className="note">{r.iban ? (r.ibanValid ? `✓ ${formatIban(r.iban)}${r.bic ? " · " + r.bic : ""}` : `⚠︎ ${r.ibanReason || "ungültig"}`) : ""}</span>
             </label>
             <label className="field"><span>Betrag (€)</span>
-              <input type="text" value={r.amount} onChange={(e) => patchRow(r.id, { amount: e.target.value })} /></label>
+              <input type="text" value={r.amount} style={errBox("amount")} onChange={(e) => patchRow(r.id, { amount: e.target.value })} /></label>
             {opts.skonto && <label className="field" style={{ maxWidth: 110 }}><span>Skonto %</span>
               <input type="number" min={0} max={20} value={r.skontoPct} onChange={(e) => patchRow(r.id, { skontoPct: e.target.value })} /></label>}
             {opts.useDueDate && <label className="field" style={{ maxWidth: 160 }}><span>Fällig am</span>
@@ -453,7 +475,8 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
             )}
           </div>
         </div>
-      ))}
+        );
+      })}
       {visible.length === 0 && <div className="card muted" style={{ textAlign: "center", padding: 28 }}>Noch keine Rechnungen – lade oben PDFs.</div>}
 
       {showModal && <SepaModal accounts={accounts} count={eligible.length} sumCents={sumEligible} defaultDate={defaultExecDate()} onClose={() => setShowModal(false)} onCreate={createSepa} />}
