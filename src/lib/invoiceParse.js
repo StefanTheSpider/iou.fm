@@ -109,64 +109,82 @@ export function findDueDate(text) {
 // und darf NICHT als Lieferant erkannt werden. `ownNames` (Auftraggeber-/Firmen-
 // namen) werden deshalb aus allen Kandidaten ausgeschlossen.
 const FORM_RE = /\b(gmbh|ug|ag|kg|ohg|e\.?\s?k\.?|gbr|ltd|inc|e\.?\s?v\.?|mbh|mbb|partg|partnerschaft|co\.?\s?kg)\b/i;
+// Namen vergleichbar machen: „&"/„and"/„u." → „und", Rechtsform & Satzzeichen raus.
+// So gilt „Tix & Travel GmbH" == „Tix and Travel GmbH" (häufiger OCR-Unterschied).
+const normName = (s) => lc(s)
+  .replace(/&/g, " und ")
+  .replace(/\b(and|u)\b/g, "und")
+  .replace(/\b(gmbh|ug|ag|kg|ohg|mbh|mbb|co|haftungsbeschr(ä|ae)nkt|e\.?\s?k\.?|gbr|ltd|inc|e\.?\s?v\.?)\b/g, " ")
+  .replace(/[^a-z0-9äöüß ]+/g, " ").replace(/\s+/g, " ").trim();
 const isOwnName = (line, ownNames) => {
-  const L = lc(line);
-  return ownNames.some((n) => { const nn = lc(n).trim(); return nn.length >= 3 && L.includes(nn); });
+  const L = normName(line); if (L.length < 3) return false;
+  return (ownNames || []).some((n) => { const nn = normName(n); return nn.length >= 3 && L.includes(nn); });
 };
 export function guessCreditor(text, ownNames = []) {
   const lines = String(text || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const own = (ownNames || []).filter(Boolean);
+  const LABEL_RE = /(rechnung|nummer|\bnr\b|datum|kunden|bearbeiter|seite|betrag|summe|telefon|\bfax\b|e-?mail|ust|umsatzsteuer|iban|bic|artikel|bezeichnung|menge|mwst|versand|zahlung|bestellung|original|leistung|lieferung|zeitraum)/i;
+  const ADDR_RE = /(stra(ß|ss)e|str\.|\bweg\b|allee|platz|gasse|\bring\b|deutschland|österreich|schweiz|germany|austria)/i;
+  const looksSpaced = (l) => { const t = l.split(/\s+/).filter(Boolean); return t.length >= 6 && t.filter((x) => x.length === 1).length / t.length > 0.5; };
+  const STOP = /^(vom|von|der|die|das|und|für|den|dem|am|im|zum|zur|inkl|netto|brutto)$/i;
+  const wordCount = (l) => l.split(/\s+/).filter((t) => /^[A-Za-zÄÖÜäöüß.&-]{2,}$/.test(t) && !STOP.test(t)).length;
+  const clean = (l) => l.replace(/\s{2,}/g, " ").slice(0, 70).trim();
+  // „Namensartige" Zeile: ≥2 echte Wörter, keine Beschriftung/Adresse/Zahl, keine Sperrschrift, nicht eigene Firma.
+  const nameish = (l) => l && !/^\d/.test(l) && !LABEL_RE.test(l) && !ADDR_RE.test(l) && !looksSpaced(l) && wordCount(l) >= 2 && l.length <= 60 && !isOwnName(l, own);
 
-  // 1) „Kontoinhaber/Inhaber/Zahlungsempfänger: <Name>" – für SEPA am korrektesten
-  //    (der Cdtr-Name muss zum Kontoinhaber passen).
+  // 1) „Kontoinhaber/Zahlungsempfänger: <Name>" – für SEPA am korrektesten.
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/(?:konto\s*-?\s*inhaber|kto\.?-?\s*inhaber|inhaber|account\s*holder|zahlungsempfänger|payee|begünstigter)\s*[:\-]?\s*(.*)$/i);
     if (m) {
       let name = (m[1] || "").trim();
-      if (!name && lines[i + 1]) name = lines[i + 1].trim(); // Name evtl. in der Folgezeile
-      name = name.replace(/\s{2,}/g, " ").slice(0, 70).trim();
+      if (!name && lines[i + 1]) name = lines[i + 1].trim();
+      name = clean(name);
       if (name && name.length >= 2 && !isOwnName(name, own)) return name;
     }
   }
 
-  // 2) Zeile(n) direkt nach „Bankverbindung/Bankdaten" – dort steht oft der Absender.
+  // 2) Zeile(n) direkt nach „Bankverbindung/Bankdaten".
   for (let i = 0; i < lines.length - 1; i++) {
     if (/bankverbindung|bankdaten/i.test(lines[i])) {
       for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
         const c = lines[j];
-        if (c && !/^(iban|bic|swift|bank(name)?|konto|ust|vat|steuer)\b/i.test(c) && !/^\d/.test(c) && !isOwnName(c, own)) {
-          return c.replace(/\s{2,}/g, " ").slice(0, 70).trim();
-        }
+        if (c && !/^(iban|bic|swift|bank(name)?|konto|ust|vat|steuer)\b/i.test(c) && !/^\d/.test(c) && !isOwnName(c, own)) return clean(c);
       }
     }
   }
 
-  // 3) Erste Firmen-Zeile (Rechtsform), die NICHT die eigene Firma ist
-  //    (klassischer Briefkopf: Firmenname als eigene Zeile oben).
-  const named = lines.slice(0, 20).find((l) => FORM_RE.test(l) && l.length < 70 && !isOwnName(l, own));
-  if (named) return named.replace(/\s{2,}/g, " ").trim();
+  // 3) Adressblock „Name / Straße + Nr. / PLZ Ort" – erster, der NICHT die eigene Firma ist
+  //    (klassischer Brief: Absender = Lieferant; der Empfänger = eigene Firma wird übersprungen).
+  for (let i = 0; i < lines.length - 2; i++) {
+    const a = lines[i], b = lines[i + 1], c = lines[i + 2];
+    const streetLine = /\d/.test(b) && /(stra(ß|ss)e|str\.?|\bweg\b|allee|platz|gasse|\bring\b)/i.test(b);
+    const plzOrt = /^\d{5}\s+\S/.test(c);
+    if (nameish(a) && streetLine && plzOrt && !isOwnName(b, own) && !isOwnName(c, own)) return clean(a);
+  }
 
-  // 4) Absender-Zeile im Briefkopf, Name+Adresse in EINER Zeile
-  //    (z. B. „brandmade, Zaunwickenweg 1a, 21147 Hamburg"): Name = Teil vor dem ersten Komma.
-  for (const l of lines.slice(0, 3)) {
+  // 4) Erste Firmen-Zeile (Rechtsform), nicht eigene Firma.
+  const named = lines.slice(0, 20).find((l) => FORM_RE.test(l) && l.length < 70 && !isOwnName(l, own));
+  if (named) return clean(named);
+
+  // 5) Absender in EINER Zeile: „Name, Straße, PLZ Ort" (Name = Teil vor dem ersten Komma).
+  for (const l of lines.slice(0, 6)) {
     if (l.includes(",") && /\b\d{5}\b/.test(l) && !isOwnName(l, own) && !/^\d/.test(l)) {
       const name = l.split(",")[0].trim();
-      // nur wenn der Teil vor dem Komma KEINE Straße/Hausnummer ist
       if (name.length >= 2 && !/(stra(ß|ss)e|str\.|weg|allee|platz|gasse|ring)\b/i.test(name) && !/\d/.test(name)) return name.slice(0, 70);
     }
   }
 
-  // 5) Fallback: erste „namensartige" Zeile – KEINE Feld-Beschriftung, keine
-  //    buchstabengesperrte Zeile („n n o o t t e e …"), nicht die eigene Firma.
-  //    Findet sich nichts Sinnvolles, lieber LEER lassen (Nutzer füllt manuell).
-  const LABEL_RE = /(rechnung|nummer|\bnr\b|datum|kunden|bearbeiter|seite|betrag|summe|telefon|\bfax\b|e-?mail|ust|umsatzsteuer|iban|bic|artikel|bezeichnung|menge|mwst|versand|zahlung|bestellung|original|stra(ß|ss)e|str\.|\bweg\b|allee|platz|gasse|\bring\b|deutschland|österreich|schweiz|germany|austria)/i;
-  const looksSpaced = (l) => { const t = l.split(/\s+/).filter(Boolean); return t.length >= 6 && t.filter((x) => x.length === 1).length / t.length > 0.5; };
-  // Nur Zeilen mit ≥2 echten Wort-Tokens (reine Buchstaben, kein Code/Datum, keine Stoppwörter).
-  const STOP = /^(vom|von|der|die|das|und|für|den|dem|am|im|zum|zur|inkl|netto|brutto)$/i;
-  const wordCount = (l) => l.split(/\s+/).filter((t) => /^[A-Za-zÄÖÜäöüß.&-]{3,}$/.test(t) && !STOP.test(t)).length;
-  const first = lines.slice(0, 8).find((l) =>
-    !isOwnName(l, own) && !/^\d/.test(l) && !LABEL_RE.test(l) && !looksSpaced(l) && wordCount(l) >= 2);
-  return (first || "").slice(0, 70);
+  // 6) Häufigster namensartiger Eintrag oben – der Lieferant steht oft mehrfach drauf
+  //    (Briefkopf + Absenderblock + Fußzeile). Pattern-unabhängig, robust bei Scans.
+  const freq = new Map();
+  for (const l of lines.slice(0, 30)) if (nameish(l)) { const k = clean(l); freq.set(k, (freq.get(k) || 0) + 1); }
+  let best = "", bestN = 1;
+  for (const [k, n] of freq) if (n > bestN) { best = k; bestN = n; }
+  if (best) return best;
+
+  // 7) Fallback: erste namensartige Zeile, sonst leer (Nutzer füllt manuell – IBAN wird gemerkt).
+  const first = lines.slice(0, 8).find(nameish);
+  return first ? clean(first) : "";
 }
 
 // Gesamt-Parser: nimmt entweder rohen Text oder Zeilen-Array.

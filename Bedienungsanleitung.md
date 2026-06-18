@@ -69,7 +69,8 @@ Tipp: Über das **Suchfeld** (Bestellnummer oder Name) findest du einen Eintrag 
 
 1. Tab **Rechnungen** öffnen, PDFs laden (E-Rechnung exakt, sonst Mustererkennung; gescannte PDFs werden per Texterkennung gelesen).
    - **Per E-Mail eingegangene Rechnungen (automatisch):** Leite eine Rechnung (PDF) an deine `belege-…@iou-tech.com` weiter. iou.fm liest sie **automatisch im Hintergrund** ein – sie ist also schon da, wenn du den Rechnungen-Tab öffnest. Ein Banner oben zeigt, wie viele Rechnungen noch **geprüft** werden müssen. Mit **„E-Mail-Eingang prüfen"** kannst du sofort nachsehen. (Belege ohne IBAN, z. B. Tickets, werden übersprungen.)
-   - **Prüfen & freigeben:** Jede Rechnung muss einmal auf **„✓ Geprüft"** gesetzt werden. Nur geprüfte Rechnungen fließen in die SEPA-Datei bzw. den EBICS-Versand – so wird nie etwas Ungeprüftes ausgezahlt.
+   - **Prüfen & freigeben:** Jede Rechnung hat das Feld **„Geprüft & freigegeben?"** (Standard **Nein**). Erst auf **Ja** fließt sie in die SEPA-Datei bzw. den EBICS-Versand; es wird automatisch festgehalten, **wer geprüft hat**. So wird nie etwas Ungeprüftes ausgezahlt.
+   - **Wer darf prüfen/weiterleiten:** Admins immer; Mitarbeiter nur, wenn der Admin sie unter **Stammdaten → Benutzer** freischaltet. Mitarbeiter sehen außerdem **keine vom Admin geladenen Rechnungen** (auch nicht im Archiv) – nur per E-Mail eingegangene bzw. selbst geladene.
 2. Lieferanten-Gedächtnis füllt bekannte IBANs automatisch.
 3. Prüfen → als Admin SEPA-Datei erstellen. Im **Bank-Tarif** kannst du danach direkt **„Per EBICS an Bank senden"** – die Belege gehen dann automatisch an den Steuerberater.
 4. **Schon bezahlt?** Erscheint die Warnung, kannst du die Rechnung mit **„Nur an Steuerberater weiterleiten (nicht zahlen)"** trotzdem in die Buchhaltung geben, ohne sie erneut zu überweisen.

@@ -120,7 +120,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           invoiceNumber, dueDate: ex.dueDate || "",
           purpose: `Rechnung ${invoiceNumber}${creditorName ? " " + creditorName : ""}`.trim(),
           skontoPct: "", note: "", status: "offen", selected: true, checked: false,
-          createdBy: userName || "—", createdAt: today(),
+          createdBy: userName || "—", createdByRole: canPay ? "admin" : "user", createdAt: today(),
         };
         if (keyMeaningful(invoiceNumber, iban)) seen.add(key);
         try { const ab = await file.arrayBuffer(); pdfStore.current.set(row.id, { filename: row.fileName, content: bufToB64(ab) }); } catch { /* egal */ }
@@ -185,12 +185,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   }
   // Eine Rechnung ist erst zahlbar, wenn sie als GEPRÜFT markiert wurde (r.checked).
   // So landet nichts Ungeprüftes in der SEPA-Datei oder im EBICS-Versand.
+  // Sichtbarkeit: Von Admins geladene Rechnungen sehen NUR Admins – nicht Mitarbeiter
+  // (auch nicht im Archiv, das Rechnungs-Batches ohnehin nur Admins zeigt). Per E-Mail
+  // eingegangene Belege („E-Mail-Eingang") sind für alle sichtbar.
+  const adminLoaded = (r) => r.createdByRole === "admin" || (!r.createdByRole && r.createdBy && r.createdBy !== "E-Mail-Eingang");
+  const canSee = (r) => canPay || !adminLoaded(r);
   const computed = rows.map((r) => ({ r, cents: rowCents(r), eligible: r.status === "offen" && r.ibanValid && rowCents(r) > 0 && r.selected !== false && r.checked === true }));
-  const eligible = computed.filter((c) => c.eligible);
+  const visibleAll = computed.filter(({ r }) => canSee(r));
+  const eligible = visibleAll.filter((c) => c.eligible);
   const sumEligible = eligible.reduce((s, c) => s + c.cents, 0);
-  const visible = computed.filter(({ r }) => fStatus === "alle" || r.status === fStatus);
-  // Wie viele offene Rechnungen warten noch auf die Prüfung? (Banner-Hinweis)
-  const toCheck = rows.filter((r) => r.status === "offen" && !r.checked).length;
+  const visible = visibleAll.filter(({ r }) => fStatus === "alle" || r.status === fStatus);
+  // Wie viele offene Rechnungen warten noch auf die Prüfung? (Banner-Hinweis, nur Sichtbare)
+  const toCheck = visibleAll.filter(({ r }) => r.status === "offen" && !r.checked).length;
+  // Wer darf prüfen & an den Steuerberater weiterleiten? Admins immer; sonst nur Mitarbeiter,
+  // die in den Stammdaten freigeschaltet sind (config.invoiceReviewers) – case-insensitiv.
+  const mayReview = canPay || (data.config?.invoiceReviewers || []).some((x) => String(x).toLowerCase() === String(userName).toLowerCase());
 
   function defaultExecDate() {
     if (opts.useDueDate) {
@@ -353,7 +362,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
         </label>
         <div className="toolbar" style={{ marginTop: 0 }}>
           {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Wird automatisch im Hintergrund geprüft – hier kannst du sofort auf neu weitergeleitete Rechnungen prüfen">{mailBusy ? "Prüfe Eingang …" : "E-Mail-Eingang prüfen"}</button>}
-          {onSendBelege && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater senden">An Steuerberater senden</button>}
+          {onSendBelege && mayReview && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater senden">An Steuerberater senden</button>}
           <span className="note">Mehrere Dateien auf einmal möglich. E-Rechnungen (ZUGFeRD/XRechnung) werden exakt gelesen.</span>
         </div>
         {scan && <p className="note" style={{ color: "var(--secondary, #5b8cff)" }}>{scan}</p>}
@@ -402,8 +411,8 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
             <span className="refund-amount ok">{formatEur(cents)}</span>
             {r.status === "offen" && (
               r.checked
-                ? <button className="pill ok" style={{ border: "none", cursor: "pointer" }} onClick={() => patchRow(r.id, { checked: false })} title="Prüfung zurücknehmen">✓ Geprüft</button>
-                : <button className="pill warn" style={{ border: "none", cursor: "pointer", fontWeight: 700 }} onClick={() => patchRow(r.id, { checked: true })} title="Erst nach Prüfung kann diese Rechnung ausgezahlt werden">Als geprüft markieren</button>
+                ? <span className="pill ok" title={r.checkedBy ? `geprüft von ${r.checkedBy}` : "geprüft"}>✓ geprüft{r.checkedBy ? ` von ${r.checkedBy}` : ""}</span>
+                : <span className="pill warn">ungeprüft</span>
             )}
             <span className={`pill ${r.status === "offen" ? "warn" : "ok"}`}>{r.status}</span>
             <button className="btn ghost small" onClick={() => setConfirmDel(r.id)}>✕</button>
@@ -425,8 +434,23 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
               <input type="text" value={r.invoiceNumber} onChange={(e) => patchRow(r.id, { invoiceNumber: e.target.value })} /></label>
             <label className="field col-full"><span>Verwendungszweck</span>
               <input type="text" value={r.purpose} onChange={(e) => patchRow(r.id, { purpose: e.target.value })} /></label>
-            <label className="field col-full"><span>Interner Kommentar</span>
-              <input type="text" value={r.note} placeholder="z. B. Freigabe durch …, Bestellbezug" onChange={(e) => patchRow(r.id, { note: e.target.value })} /></label>
+            {r.status === "offen" && (
+              <label className="field"><span>Geprüft &amp; freigegeben?</span>
+                <select value={r.checked ? "ja" : "nein"} disabled={!mayReview}
+                  onChange={(e) => {
+                    const ja = e.target.value === "ja";
+                    patchRow(r.id, ja
+                      ? { checked: true, checkedBy: userName || "—", checkedAt: today() }
+                      : { checked: false, checkedBy: null, checkedAt: null });
+                  }}>
+                  <option value="nein">Nein</option>
+                  <option value="ja">Ja – geprüft</option>
+                </select>
+                {r.checked && r.checkedBy
+                  ? <span className="note" style={{ fontSize: 11, color: "var(--ok, #3ddc97)" }}>✓ geprüft von {r.checkedBy}{r.checkedAt ? ` · ${deDate(r.checkedAt)}` : ""}</span>
+                  : <span className="note" style={{ fontSize: 11 }}>{mayReview ? "Erst bei Ja auszahlbar." : "Nur freigegebene Mitarbeiter dürfen prüfen (Stammdaten)."}</span>}
+              </label>
+            )}
           </div>
         </div>
       ))}

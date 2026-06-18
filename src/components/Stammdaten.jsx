@@ -39,7 +39,7 @@ export default function Stammdaten({ data, updateData, auth, sync, shopify, acco
       <p className="sub">Auftraggeberkonten, Zugänge, Shop-Anbindung und Darstellung – verschlüsselt lokal gespeichert.</p>
       {isAdmin && billing && <BillingSettings billing={billing} license={license} tenantId={tenantId} />}
       {isAdmin && billing && license?.isOwnerTenant && <OwnerCustomers billing={billing} />}
-      {auth && <Users auth={auth} />}
+      {auth && <Users auth={auth} data={data} updateData={updateData} />}
       {isAdmin && sync && <CloudSync sync={sync} />}
       {isAdmin && <ModuleConfig data={data} updateData={updateData} />}
       {auth?.currentUser?.role === "admin" && <DatevConfig data={data} updateData={updateData} />}
@@ -186,13 +186,22 @@ function ModuleConfig({ data, updateData }) {
   );
 }
 
-function Users({ auth }) {
+function Users({ auth, data, updateData }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   if (auth.currentUser.role !== "admin") return null;
+
+  // Rechnungs-Prüf-/Weiterleit-Berechtigung (admin-verwaltet, E2E in den Einstellungen).
+  const reviewers = (data?.config?.invoiceReviewers) || [];
+  const mayReview = (u) => u.role === "admin" || reviewers.some((x) => x.toLowerCase() === u.username.toLowerCase());
+  const toggleReviewer = (uname, on) => updateData((d) => {
+    const list = ((d.config?.invoiceReviewers) || []).filter((x) => x.toLowerCase() !== uname.toLowerCase());
+    if (on) list.push(uname);
+    return { ...d, config: { ...(d.config || {}), invoiceReviewers: list } };
+  });
 
   async function add(e) {
     e.preventDefault(); setError(""); setBusy(true);
@@ -207,7 +216,7 @@ function Users({ auth }) {
 
       <div className="table-wrap" style={{ marginBottom: 16 }}>
         <table>
-          <thead><tr><th>Benutzer</th><th>Rolle</th><th></th></tr></thead>
+          <thead><tr><th>Benutzer</th><th>Rolle</th><th>Rechnungen prüfen &amp; weiterleiten</th><th></th></tr></thead>
           <tbody>
             {auth.users.map((u) => {
               const isSelf = u.username.toLowerCase() === auth.currentUser.username.toLowerCase();
@@ -215,6 +224,12 @@ function Users({ auth }) {
                 <tr key={u.username}>
                   <td>{u.username}{isSelf && <span className="muted"> · du</span>}</td>
                   <td>{u.role === "admin" ? "Admin" : "Mitarbeiter"}</td>
+                  <td>{u.role === "admin"
+                    ? <span className="muted">immer (Admin)</span>
+                    : <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                        <input type="checkbox" checked={mayReview(u)} onChange={(e) => toggleReviewer(u.username, e.target.checked)} />
+                        <span className="muted">{mayReview(u) ? "darf prüfen" : "gesperrt"}</span>
+                      </label>}</td>
                   <td>{!isSelf && (
                     <button className="btn danger small" disabled={busy} onClick={async () => { setError(""); setBusy(true); try { await auth.removeUser(u.username); } catch (err) { setError(err.message || "Entfernen fehlgeschlagen."); } finally { setBusy(false); } }}>Entfernen</button>
                   )}</td>
