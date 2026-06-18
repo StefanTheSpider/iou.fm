@@ -375,12 +375,9 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
               <div className="refund-grid">
                 {isErstattung && (
                   <label className="f"><span>Zahlart</span>
-                    <select value={r.method} onChange={(e) => patchRow(r.id, { method: e.target.value })}
-                      title="Automatisch aus der Bestellung erkannt – falls falsch (z. B. Klarna über Shopify Payments wird als Karte gemeldet), hier korrigieren">
-                      {METHODS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                    </select>
-                    <span className="note" style={{ fontSize: 11 }}>autom. erkannt – korrigierbar</span>
-                  </label>
+                    <div className="locked-field" title="Automatisch aus der Bestellung erkannt (Gateway + Transaktionsdetails) und festgeschrieben">
+                      {methodLabel(r.method)} <span className="lock-ico">🔒</span>
+                    </div></label>
                 )}
                 <label className={`f ${block?.field === "paid" ? "err" : ""}`}><span>{isErstattung ? "Gezahlt (€)" : "Betrag (€)"}</span>
                   <input className="mono" type="text" value={r.paid} placeholder="0,00"
