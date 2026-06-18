@@ -336,7 +336,9 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       )}
 
       <div className="card">
-        <input ref={fileRef} type="file" accept="application/pdf,.pdf,application/xml,text/xml,.xml" multiple style={{ display: "none" }}
+        {/* Kein restriktives accept: WKWebView (Tauri/macOS) graut .xml sonst aus, sodass man
+            XRechnungen nicht auswählen kann. Die Endungsprüfung (.pdf/.xml) macht addFiles selbst. */}
+        <input ref={fileRef} type="file" multiple style={{ display: "none" }}
           onChange={(e) => addFiles(e.target.files)} />
         <div
           className={`dropzone ${drag ? "drag" : ""}`}
