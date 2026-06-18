@@ -336,21 +336,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       )}
 
       <div className="card">
-        {/* Kein restriktives accept: WKWebView (Tauri/macOS) graut .xml sonst aus, sodass man
-            XRechnungen nicht auswählen kann. Die Endungsprüfung (.pdf/.xml) macht addFiles selbst. */}
-        <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+        {/* Kein restriktives accept: WKWebView (Tauri/macOS) graut .xml sonst aus. Die
+            Endungsprüfung (.pdf/.xml) macht addFiles selbst. Auswahl über ein <label> (htmlFor)
+            statt programmatischem .click() – das öffnet den Dateidialog im App-Fenster zuverlässig. */}
+        <input ref={fileRef} id="rechnung-file-input" type="file" multiple style={{ display: "none" }}
           onChange={(e) => addFiles(e.target.files)} />
-        <div
+        <label
+          htmlFor="rechnung-file-input"
           className={`dropzone ${drag ? "drag" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); }}
-          onClick={() => fileRef.current?.click()}
-          role="button"
-          style={{ marginBottom: 12 }}
+          style={{ marginBottom: 12, display: "block", cursor: "pointer" }}
         >
           {busy ? "Lese …" : "📄 Rechnungen (PDF oder XRechnung-XML) hierher ziehen oder klicken zum Auswählen"}
-        </div>
+        </label>
         <div className="toolbar" style={{ marginTop: 0 }}>
           {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Wird automatisch im Hintergrund geprüft – hier kannst du sofort auf neu weitergeleitete Rechnungen prüfen">{mailBusy ? "Prüfe Eingang …" : "E-Mail-Eingang prüfen"}</button>}
           {onSendBelege && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater senden">An Steuerberater senden</button>}

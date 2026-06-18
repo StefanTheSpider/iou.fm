@@ -63,8 +63,10 @@ export default function App() {
   }, [session]);
   const sessionRef = useRef(null);
   const savedTimer = useRef(null);
+  const dirtyRef = useRef(false); // Spiegel von `dirty` für async Callbacks (Pull darf nichts überschreiben)
 
   useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
 
   // Lizenz-/Abo-Status laden (nicht im Vendor-Support-Modus).
   const refreshLicense = useCallback(async () => {
@@ -198,7 +200,9 @@ export default function App() {
     if (!sessionRef.current?.tenantId) return;
     try {
       const res = await Sync.pull(sessionRef.current);
-      if (res?.data) { applyMerged(res.data); await saveVault(sessionRef.current, res.data); }
+      // Während des Pulls könnte der Nutzer schon etwas geändert haben (z. B. erste Rechnung
+      // hinzugefügt). Dann NICHT überschreiben – sonst verschwindet die Eingabe wieder.
+      if (res?.data && !dirtyRef.current) { applyMerged(res.data); await saveVault(sessionRef.current, res.data); }
     } catch (e) { console.warn("Sync (pull) fehlgeschlagen:", e.message); }
   }, [applyMerged]);
 
