@@ -52,6 +52,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const [belegMsg, setBelegMsg] = useState("");
   const [scan, setScan] = useState("");             // OCR-Fortschritt (gescannte PDFs)
   const [mailBusy, setMailBusy] = useState(false);  // E-Mail-Eingang wird manuell geprüft
+  const [drag, setDrag] = useState(false);          // Drag-&-Drop-Hervorhebung
   const [lastSepa, setLastSepa] = useState(null);   // { xml, filename, batchId } – für EBICS-Versand
   const [showModal, setShowModal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -335,13 +336,23 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       )}
 
       <div className="card">
+        <input ref={fileRef} type="file" accept="application/pdf,.pdf,application/xml,text/xml,.xml" multiple style={{ display: "none" }}
+          onChange={(e) => addFiles(e.target.files)} />
+        <div
+          className={`dropzone ${drag ? "drag" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); }}
+          onClick={() => fileRef.current?.click()}
+          role="button"
+          style={{ marginBottom: 12 }}
+        >
+          {busy ? "Lese …" : "📄 Rechnungen (PDF oder XRechnung-XML) hierher ziehen oder klicken zum Auswählen"}
+        </div>
         <div className="toolbar" style={{ marginTop: 0 }}>
-          <input ref={fileRef} type="file" accept="application/pdf,.pdf,application/xml,text/xml,.xml" multiple style={{ display: "none" }}
-            onChange={(e) => addFiles(e.target.files)} />
-          <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy || mailBusy}>{busy ? "Lese …" : "Rechnungs-PDFs laden"}</button>
-          {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Wird beim Öffnen automatisch geprüft – hier kannst du erneut auf neu weitergeleitete Rechnungen prüfen">{mailBusy ? "Prüfe Eingang …" : "E-Mail-Eingang prüfen"}</button>}
+          {mailbox && <button className="btn ghost" onClick={async () => { setMailBusy(true); try { await importMailInvoices(); } finally { setMailBusy(false); } }} disabled={busy || mailBusy} title="Wird automatisch im Hintergrund geprüft – hier kannst du sofort auf neu weitergeleitete Rechnungen prüfen">{mailBusy ? "Prüfe Eingang …" : "E-Mail-Eingang prüfen"}</button>}
           {onSendBelege && <button className="btn ghost" onClick={sendBelegeNow} disabled={busy} title="Alle in dieser Sitzung geladenen Rechnungs-PDFs sofort an Steuerberater senden">An Steuerberater senden</button>}
-          <span className="note">Mehrere PDFs auf einmal möglich. E-Rechnungen (ZUGFeRD/XRechnung) werden exakt gelesen.</span>
+          <span className="note">Mehrere Dateien auf einmal möglich. E-Rechnungen (ZUGFeRD/XRechnung) werden exakt gelesen.</span>
         </div>
         {scan && <p className="note" style={{ color: "var(--secondary, #5b8cff)" }}>{scan}</p>}
         {error && <p className="error-text">{error}</p>}
