@@ -79,7 +79,7 @@ export async function syncDecryptRaw(session, blob) {
 }
 
 // --- Daten-Split (Löhne bleiben lokal) ---------------------------------------
-const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config"];
+const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config", "invoiceMailSeen"];
 export function sharedSubset(data) {
   const out = {};
   for (const k of SHARED_KEYS) out[k] = data[k];
@@ -102,6 +102,9 @@ export function mergeShared(localData, shared) {
     branding: shared.branding ?? localData.branding,
     config: { ...(localData.config || {}), ...(shared.config || {}) },
     batches: [...unionById(localNonLohn, shared.batches), ...lohn],
+    // Schon eingelesene Beleg-IDs nur VEREINIGEN, nie verkleinern – sonst werden per
+    // E-Mail eingegangene (und teils längst bezahlte) Rechnungen nach Sync/Neustart erneut importiert.
+    invoiceMailSeen: Array.from(new Set([...(localData.invoiceMailSeen || []), ...(shared.invoiceMailSeen || [])])).slice(-5000),
   };
 }
 

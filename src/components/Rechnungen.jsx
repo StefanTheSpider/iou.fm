@@ -151,7 +151,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     setError(""); setSaved(""); setScan("Suche eingegangene Rechnungen …");
     try {
       const { newRows, newSeen, dup, failed } = await fetchMailInvoices({
-        mailbox, invoices: rows, creditors, accounts, seenIds: data.invoiceMailSeen || [],
+        mailbox, invoices: rows, creditors, accounts, seenIds: data.invoiceMailSeen || [], batches: data.batches || [],
       });
       if (newRows.length || newSeen.length) {
         updateData((d) => ({

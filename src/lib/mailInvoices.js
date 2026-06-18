@@ -19,13 +19,24 @@ async function ibanMeta(iban) {
 }
 
 // mailbox: { belege(), files(beId), fileBytes(beId, name) }
-export async function fetchMailInvoices({ mailbox, invoices = [], creditors = {}, accounts = [], seenIds = [] }) {
+// batches: data.batches – um bereits BEZAHLTE Rechnungen nie erneut zu importieren.
+export async function fetchMailInvoices({ mailbox, invoices = [], creditors = {}, accounts = [], seenIds = [], batches = [] }) {
   if (!mailbox) return { newRows: [], newSeen: [], dup: 0, failed: 0 };
   const belege = await mailbox.belege();
   const seen = new Set([...(invoices || []).map((r) => r.belegId).filter(Boolean), ...(seenIds || [])]);
   const ownNames = (accounts || []).flatMap((a) => [a.name, a.label]).filter(Boolean);
   const ownIbans = (accounts || []).map((a) => a.iban).filter(Boolean);
   const dupKeys = new Set((invoices || []).map(rowKey).filter((k) => k !== "||0"));
+  // Bereits bezahlte Rechnungen (aus Rechnungs-Batches): per Schlüssel UND per Rechnungsnummer.
+  const paidKeys = new Set();
+  for (const b of (batches || [])) {
+    if (b.kind !== "rechnung") continue;
+    for (const p of (b.payments || [])) {
+      const k = invoiceKey(p.invoiceNumber, p.iban, p.amountCents);
+      if (k !== "||0") paidKeys.add(k);
+      if (p.invoiceNumber) paidKeys.add(String(p.invoiceNumber).toLowerCase().trim());
+    }
+  }
   const newRows = []; const newSeen = []; let dup = 0; let failed = 0;
   for (const b of (belege || [])) {
     if (seen.has(b.id)) continue;
@@ -45,6 +56,8 @@ export async function fetchMailInvoices({ mailbox, invoices = [], creditors = {}
       const invoiceNumber = ex.invoiceNumber || "";
       const dKey = invoiceKey(invoiceNumber, iban, ex.amountCents);
       if (dupKeys.has(dKey)) { dup++; continue; } // schon vorhanden → nicht zweimal anlegen
+      // Bereits bezahlt? Dann NICHT erneut importieren (taucht sonst nach Updates wieder auf).
+      if (paidKeys.has(dKey) || (invoiceNumber && paidKeys.has(invoiceNumber.toLowerCase().trim()))) { dup++; continue; }
       dupKeys.add(dKey);
       const meta = await ibanMeta(iban);
       const creditorName = (creditors[iban]?.name) || ex.creditorName || "";

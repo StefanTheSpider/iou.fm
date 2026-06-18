@@ -374,7 +374,7 @@ export default function App() {
       const d = s.data || {};
       const { newRows, newSeen } = await fetchMailInvoices({
         mailbox: inbox, invoices: d.invoices || [], creditors: d.creditors || {},
-        accounts: d.accounts || [], seenIds: d.invoiceMailSeen || [],
+        accounts: d.accounts || [], seenIds: d.invoiceMailSeen || [], batches: d.batches || [],
       });
       if (newRows.length || newSeen.length) {
         updateData((dd) => ({
