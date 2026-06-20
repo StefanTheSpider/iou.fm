@@ -71,6 +71,12 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       ...d,
       invoices: (d.invoices || []).filter((x) => x.id !== id),
       deletedIds: Array.from(new Set([...(d.deletedIds || []), id])).slice(-10000),
+      // ZWEITER WEG: Per E-Mail importierte Rechnungen würden vom Beleg-Importer immer
+      // wieder neu eingelesen, solange die Mail im Archiv liegt. Beim Löschen markieren wir
+      // den Beleg daher dauerhaft als „gesehen" – so kommt er NICHT als neue Rechnung zurück.
+      invoiceMailSeen: row?.belegId
+        ? Array.from(new Set([...(d.invoiceMailSeen || []), row.belegId])).slice(-3000)
+        : (d.invoiceMailSeen || []),
     }), true);
     setConfirmDel(null);
   };
