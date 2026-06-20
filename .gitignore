@@ -42,3 +42,11 @@ npm-debug.log*
 # Bewusst behalten (Vorlagen ohne Geheimnisse):
 #   .env.example, shopify.local.example.json
 iou-fm-fuer-Levent.pdf
+
+# ---- EBICS / SEPA: Schlüssel-Backups, INI-Briefe, echte Zahldateien (NIE committen) ----
+iou-ebics-backup*.json
+INI-Brief*
+*_SEPA.xml
+
+# ---- LibreOffice-/Editor-Lockdateien ----
+.~lock.*#

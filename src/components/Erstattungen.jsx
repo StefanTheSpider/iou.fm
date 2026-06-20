@@ -81,7 +81,17 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
   function patchRow(id, patch) { setRefunds((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r))); }
   function removeRow(id) {
-    setRefunds((rs) => rs.filter((x) => x.id !== id));
+    // SICHERHEITSNETZ: Bereits erledigte Einträge (per SEPA überwiesen/erstattet/storniert)
+    // werden NIEMALS gelöscht oder getombstonet – ausgezahltes/abgeschlossenes bleibt erhalten.
+    const row = (rows || []).find((x) => x.id === id);
+    if (row && row.status === "erledigt") { setConfirmDel(null); return; }
+    // Sofort speichern UND als Tombstone vormerken, damit der (offene) Eintrag nach Update/Sync
+    // nicht über die additive Zusammenführung wieder eingespielt wird.
+    updateData((d) => ({
+      ...d,
+      refunds: (d.refunds || []).filter((x) => x.id !== id),
+      deletedIds: Array.from(new Set([...(d.deletedIds || []), id])).slice(-10000),
+    }), true);
     setConfirmDel(null);
   }
   const stamp = () => ({ createdBy: userName || "—", createdAt: today() });

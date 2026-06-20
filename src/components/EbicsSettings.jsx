@@ -1,5 +1,17 @@
 import { useState } from "react";
-import { generateEbicsKeys, openIniLetter, ebicsStatusLabel, EBICS_STATUS, ebicsConfigValid } from "../lib/ebics/index.js";
+import { generateEbicsKeys, openIniLetter, ebicsStatusLabel, EBICS_STATUS, ebicsConfigValid, createEbicsClient } from "../lib/ebics/index.js";
+import { ebicsHttpPost } from "../lib/ebics/transport.js";
+import { exportEbicsKeys, importEbicsKeys } from "../lib/ebics/keyBackup.js";
+
+// Datei-Download (Tauri-WebView blockiert window.open; Blob + <a download> landet in „Downloads").
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 
 // Geführter EBICS-Einrichtungs-Assistent (Einstellungen → Bankanbindung).
 // Opt-in: Tix & Travel (oder jeder Käufer) entscheidet hier aktiv, ob die direkte
@@ -11,6 +23,7 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [backupPw, setBackupPw] = useState("");
 
   const enabled = !!cfg.enabled;
   const status = cfg.status || EBICS_STATUS.UNINITIALIZED;
@@ -42,6 +55,47 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
       }), true);
       setMsg("EBICS-Schlüssel wurden lokal erzeugt und verschlüsselt gespeichert. Jetzt den INI-Brief drucken.");
     } catch (e) { setErr(e.message || "Schlüssel-Erzeugung fehlgeschlagen."); } finally { setBusy(""); }
+  }
+
+  // Schlüssel verschlüsselt sichern (Datei-Download). Schützt vor Verlust bei
+  // Gerätewechsel/Datenreset – ohne erneute Bank-Initialisierung.
+  async function backupKeys() {
+    setErr(""); setMsg("");
+    try {
+      const text = await exportEbicsKeys(keys, backupPw);
+      downloadText(`iou-ebics-backup_${cfg.partnerId || "schluessel"}.json`, text);
+      setBackupPw("");
+      setMsg("Sicherung erstellt (Ordner Downloads). Datei UND Passwort sicher aufbewahren – damit stellst du die Schlüssel jederzeit wieder her, ohne die Bank erneut zu initialisieren.");
+    } catch (e) { setErr(e.message || "Sicherung fehlgeschlagen."); }
+  }
+  // Schlüssel aus einer Sicherungsdatei wiederherstellen (auch wenn aktuell keine da sind).
+  async function restoreKeys(file) {
+    setErr(""); setMsg("");
+    if (!file) return;
+    try {
+      const restored = await importEbicsKeys(await file.text(), backupPw);
+      updateData((d) => ({ ...d, ebicsKeys: restored }), true);
+      setBackupPw("");
+      setMsg("EBICS-Schlüssel wiederhergestellt. Hat die Bank diese Schlüssel bereits freigeschaltet, kannst du direkt weiterarbeiten – ohne neuen INI-Brief.");
+    } catch (e) { setErr(e.message || "Wiederherstellung fehlgeschlagen."); }
+  }
+
+  // Schritt 3a: öffentliche Schlüssel elektronisch an die Bank senden (INI + HIA).
+  // Bewegt kein Geld. Erst danach (plus INI-Brief) schaltet die Bank frei.
+  async function sendInit() {
+    setErr(""); setMsg(""); setBusy("init");
+    try {
+      if (!keys) throw new Error("Bitte zuerst die Schlüssel erzeugen.");
+      const client = createEbicsClient({ cfg, keys, httpPost: ebicsHttpPost });
+      const r = await client.sendInitialization();
+      const fmt = (x) => `${x.technical || x.httpStatus || "?"}${x.reportText ? " " + x.reportText : ""}`;
+      if (r.ok) {
+        setCfg({ status: EBICS_STATUS.INI_SENT });
+        setMsg(`INI und HIA wurden an die Bank übermittelt (INI ${fmt(r.ini)}, HIA ${fmt(r.hia)}). Jetzt den INI-Brief drucken, unterschreiben und an die Bank senden – danach schaltet die Bank frei.`);
+      } else {
+        setErr(`Die Bank hat die Einreichung nicht mit OK quittiert (INI ${fmt(r.ini)}, HIA ${fmt(r.hia)}). Bitte Zugangsdaten/Host-ID prüfen. Hinweis: „bereits initialisiert" kann auch bedeuten, dass die Schlüssel schon eingereicht wurden.`);
+      }
+    } catch (e) { setErr(e.message || "INI/HIA-Übermittlung fehlgeschlagen."); } finally { setBusy(""); }
   }
 
   function printIni() {
@@ -117,22 +171,50 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
           <button className="btn" disabled={!configReady || busy === "gen"} onClick={generate}>
             {keys ? "Schlüssel neu erzeugen" : "Schlüssel erzeugen"}
           </button>
+          {keys && <p className="note" style={{ marginTop: 6, color: "#e7c982" }}>⚠ „Neu erzeugen" macht einen bereits an die Bank gesendeten INI-Brief ungültig – nur nutzen, wenn du wirklich neu initialisieren willst.</p>}
           {!configReady && <p className="note" style={{ marginTop: 6 }}>Bitte zuerst Host-ID, Kunden-ID, Teilnehmer-ID und URL ausfüllen.</p>}
 
-          <h3 style={{ margin: "18px 0 4px", fontSize: 14 }}>3 · INI-Brief drucken &amp; an die Bank senden</h3>
+          <div style={{ marginTop: 14, padding: 12, border: "1px solid rgba(61,220,151,.35)", borderRadius: 8, background: "rgba(61,220,151,.06)" }}>
+            <strong style={{ fontSize: 13 }}>🔐 Schlüssel sichern &amp; wiederherstellen</strong>
+            <p className="note" style={{ marginTop: 4 }}>
+              EBICS-Schlüssel werden <strong>einmal</strong> erzeugt und von der Bank <strong>einmal</strong> freigeschaltet – danach gelten sie dauerhaft (App-Updates ändern sie nicht).
+              Sichere sie hier verschlüsselt, damit sie bei Gerätewechsel/Datenverlust <strong>nicht</strong> neu initialisiert werden müssen.
+            </p>
+            <input type="password" value={backupPw} onChange={(e) => setBackupPw(e.target.value)}
+              placeholder="Sicherungs-Passwort (min. 8 Zeichen)" style={{ maxWidth: 320, marginBottom: 8 }} />
+            <div className="toolbar" style={{ margin: 0, gap: 8 }}>
+              <button className="btn ghost" disabled={!keys || backupPw.length < 8} onClick={backupKeys}>Schlüssel sichern (Backup-Datei)</button>
+              <label className="btn ghost" style={{ cursor: "pointer", margin: 0 }}>
+                Schlüssel wiederherstellen…
+                <input type="file" accept="application/json,.json" style={{ display: "none" }}
+                  onChange={(e) => { restoreKeys(e.target.files?.[0]); e.target.value = ""; }} />
+              </label>
+            </div>
+            <p className="note" style={{ marginTop: 6, fontSize: 11 }}>Für die Wiederherstellung dasselbe Passwort eingeben, dann die Sicherungsdatei wählen.</p>
+          </div>
+
+          <h3 style={{ margin: "18px 0 4px", fontSize: 14 }}>3 · Schlüssel an die Bank übermitteln</h3>
           <p className="note" style={{ marginTop: 0 }}>
-            Druckt den INI-Brief mit den öffentlichen Schlüssel-Hashes. Unterschreiben und an die Bank schicken – erst danach
-            schaltet die Bank deinen Zugang frei.
+            <strong>3a)</strong> Sende deine öffentlichen Schlüssel elektronisch an die Bank (INI + HIA). Das bewegt kein Geld.
           </p>
-          <button className="btn" disabled={!keys} onClick={printIni}>INI-Brief öffnen / drucken</button>
+          <button className="btn" disabled={!keys || busy === "init"} onClick={sendInit}>
+            {busy === "init" ? "Sende INI/HIA…" : "INI + HIA an die Bank senden"}
+          </button>
+          <p className="note" style={{ marginTop: 12 }}>
+            <strong>3b)</strong> Druckt den INI-Brief mit den öffentlichen Schlüssel-Hashes. Unterschreiben und per Post/Upload an die
+            Bank schicken – die Bank gleicht Brief und elektronische Schlüssel ab und schaltet <strong>genau diese</strong> Schlüssel frei.
+          </p>
+          <button className="btn ghost" disabled={!keys} onClick={printIni}>INI-Brief öffnen / drucken</button>
 
           <h3 style={{ margin: "18px 0 4px", fontSize: 14 }}>4 · Freischaltung bestätigen</h3>
           <p className="note" style={{ marginTop: 0 }}>
-            Sobald die Bank deinen Zugang aktiviert hat (Bestätigung + App-Freigabe eingerichtet), hier auf „aktiv" setzen.
-            Erst dann erscheint im Lohn-/Erstattungslauf der Button „Per EBICS senden".
+            Sobald die Bank deinen Zugang aktiviert hat, hier auf „aktiv" setzen. Erst dann erscheint im Lohn-/Erstattungslauf
+            der Button „Per EBICS senden". Anklickbar erst, wenn INI/HIA gesendet wurden – sonst kennt die Bank deine Schlüssel nicht.
           </p>
-          <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <input type="checkbox" checked={status === EBICS_STATUS.ACTIVE} disabled={!keys} onChange={(e) => markActive(e.target.checked)} />
+          <label style={{ display: "flex", alignItems: "center", gap: 10, opacity: (status === EBICS_STATUS.INI_SENT || status === EBICS_STATUS.ACTIVE) ? 1 : 0.5 }}>
+            <input type="checkbox" checked={status === EBICS_STATUS.ACTIVE}
+              disabled={status !== EBICS_STATUS.INI_SENT && status !== EBICS_STATUS.ACTIVE}
+              onChange={(e) => markActive(e.target.checked)} />
             <span>Zugang ist von der Bank freigeschaltet (aktiv)</span>
           </label>
 

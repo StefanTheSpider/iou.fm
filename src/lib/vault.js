@@ -23,7 +23,7 @@ const dec = new TextDecoder();
 // config.ebics – das sind keine Geheimnisse und dürfen mit dem Hub syncen. Die PRIVATEN
 // EBICS-Schlüssel liegen ausschließlich in `ebicsKeys` (lokal) und sind bewusst NICHT in
 // SHARED_KEYS – sie verlassen das Gerät nie (wie die Löhne). E2E bleibt unangetastet.
-export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], shopify: {}, ecommerce: { platform: "shopify" }, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
+export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], deletedIds: [], shopify: {}, ecommerce: { platform: "shopify" }, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
 
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -79,7 +79,7 @@ export async function syncDecryptRaw(session, blob) {
 }
 
 // --- Daten-Split (Löhne bleiben lokal) ---------------------------------------
-const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config", "invoiceMailSeen"];
+const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config", "invoiceMailSeen", "deletedIds"];
 export function sharedSubset(data) {
   const out = {};
   for (const k of SHARED_KEYS) out[k] = data[k];
@@ -91,17 +91,25 @@ function unionById(a = [], b = []) { const m = indexById(a); for (const x of b |
 export function mergeShared(localData, shared) {
   const lohn = (localData.batches || []).filter((b) => b.kind === "lohn");
   const localNonLohn = (localData.batches || []).filter((b) => b.kind !== "lohn");
+  // Lösch-Merker (Tombstones): IDs, die auf irgendeinem Gerät gelöscht wurden, werden NUR
+  // vereinigt – nie verkleinert. Dadurch übersteht eine Löschung Sync UND Update, statt dass
+  // die rein additive unionById-Zusammenführung den Eintrag (z. B. eine Erstattung) wieder
+  // einspielt. Anschließend werden getilgte IDs aus allen per-ID gemischten Listen entfernt.
+  const deletedIds = Array.from(new Set([...(localData.deletedIds || []), ...(shared.deletedIds || [])])).slice(-10000);
+  const tomb = new Set(deletedIds);
+  const alive = (arr) => arr.filter((x) => !(x && x.id != null && tomb.has(x.id)));
   return {
     ...localData,
-    accounts: unionById(localData.accounts, shared.accounts),
-    suppliers: unionById(localData.suppliers, shared.suppliers),
-    refunds: unionById(localData.refunds, shared.refunds),
-    invoices: unionById(localData.invoices, shared.invoices),
+    accounts: alive(unionById(localData.accounts, shared.accounts)),
+    suppliers: alive(unionById(localData.suppliers, shared.suppliers)),
+    refunds: alive(unionById(localData.refunds, shared.refunds)),
+    invoices: alive(unionById(localData.invoices, shared.invoices)),
     creditors: { ...(localData.creditors || {}), ...(shared.creditors || {}) },
     shopify: shared.shopify ?? localData.shopify,
     branding: shared.branding ?? localData.branding,
     config: { ...(localData.config || {}), ...(shared.config || {}) },
-    batches: [...unionById(localNonLohn, shared.batches), ...lohn],
+    batches: [...alive(unionById(localNonLohn, shared.batches)), ...lohn],
+    deletedIds,
     // Schon eingelesene Beleg-IDs nur VEREINIGEN, nie verkleinern – sonst werden per
     // E-Mail eingegangene (und teils längst bezahlte) Rechnungen nach Sync/Neustart erneut importiert.
     invoiceMailSeen: Array.from(new Set([...(localData.invoiceMailSeen || []), ...(shared.invoiceMailSeen || [])])).slice(-5000),

@@ -9,7 +9,11 @@
 //   uninitialized → keys_generated → ini_sent → active
 //
 // WICHTIG: Solange der Zugang nicht "active" ist (Bank hat den INI-Brief verarbeitet
-// und photoTAN-Freigabe ist eingerichtet), wird KEIN echter Versand ausgeführt.
+// und photoTAN-Freigabe ist eingerichtet), wird KEIN echter Zahlungs-Versand ausgeführt.
+// INI/HIA (Schlüssel-Einreichung) und HPB (Bankschlüssel) bewegen kein Geld und sind
+// Teil der Erst-Initialisierung.
+
+import { buildIniRequest, buildHiaRequest, parseEbicsReturnCodes } from "./protocol.js";
 
 export const EBICS_STATUS = {
   UNINITIALIZED: "uninitialized",
@@ -49,12 +53,22 @@ export function createEbicsClient({ cfg, keys, httpPost }) {
 
   return {
     // INI/HIA: öffentliche Schlüssel bei der Bank einreichen (digitaler Teil der Initialisierung).
+    // Bewegt kein Geld. Sendet erst INI (A006), dann HIA (X002+E002) und gibt die EBICS-
+    // Returncodes beider Schritte zurück. 000000 = OK.
     async sendInitialization() {
       ensureConfig();
       if (!keys?.signature?.priv) throw new Error("Es wurden noch keine EBICS-Schlüssel erzeugt.");
-      // TODO(scharfschalten): EBICS INI- + HIA-Auftrag aufbauen und via httpPost an cfg.ebicsUrl senden.
-      // Wird beim Test gegen den Bankzugang verifiziert (H005-Envelope, A006/X002/E002).
-      throw new Error("Digitale Initialisierung wird nach Erhalt der Bankparameter scharfgeschaltet. Bitte zunächst den INI-Brief drucken und an die Bank senden.");
+      const ini = await buildIniRequest({ cfg, keys });
+      const iniResp = await httpPost(cfg.ebicsUrl, ini.xml);
+      const iniRc = { httpStatus: iniResp.status, ...parseEbicsReturnCodes(iniResp.text) };
+      const iniOk = iniResp.status >= 200 && iniResp.status < 300 && iniRc.technical === "000000";
+
+      const hia = await buildHiaRequest({ cfg, keys });
+      const hiaResp = await httpPost(cfg.ebicsUrl, hia.xml);
+      const hiaRc = { httpStatus: hiaResp.status, ...parseEbicsReturnCodes(hiaResp.text) };
+      const hiaOk = hiaResp.status >= 200 && hiaResp.status < 300 && hiaRc.technical === "000000";
+
+      return { ini: iniRc, hia: hiaRc, ok: iniOk && hiaOk };
     },
 
     // Bank-öffentliche Schlüssel abholen (HPB) und Fingerabdruck vergleichen.
