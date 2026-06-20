@@ -23,7 +23,7 @@ const dec = new TextDecoder();
 // config.ebics – das sind keine Geheimnisse und dürfen mit dem Hub syncen. Die PRIVATEN
 // EBICS-Schlüssel liegen ausschließlich in `ebicsKeys` (lokal) und sind bewusst NICHT in
 // SHARED_KEYS – sie verlassen das Gerät nie (wie die Löhne). E2E bleibt unangetastet.
-export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], deletedIds: [], shopify: {}, ecommerce: { platform: "shopify" }, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
+export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], deletedIds: [], belegeArchive: {}, shopify: {}, ecommerce: { platform: "shopify" }, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
 
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -79,7 +79,7 @@ export async function syncDecryptRaw(session, blob) {
 }
 
 // --- Daten-Split (Löhne bleiben lokal) ---------------------------------------
-const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config", "invoiceMailSeen", "deletedIds"];
+const SHARED_KEYS = ["accounts", "suppliers", "refunds", "invoices", "creditors", "shopify", "branding", "config", "invoiceMailSeen", "deletedIds", "belegeArchive"];
 export function sharedSubset(data) {
   const out = {};
   for (const k of SHARED_KEYS) out[k] = data[k];
@@ -105,6 +105,9 @@ export function mergeShared(localData, shared) {
     refunds: alive(unionById(localData.refunds, shared.refunds)),
     invoices: alive(unionById(localData.invoices, shared.invoices)),
     creditors: { ...(localData.creditors || {}), ...(shared.creditors || {}) },
+    // Revisionssicheres Belege-Archiv: nur VEREINIGEN, nie verkleinern (append-only) –
+    // einmal archivierte Belege bleiben dauerhaft erhalten.
+    belegeArchive: { ...(localData.belegeArchive || {}), ...(shared.belegeArchive || {}) },
     shopify: shared.shopify ?? localData.shopify,
     branding: shared.branding ?? localData.branding,
     config: { ...(localData.config || {}), ...(shared.config || {}) },

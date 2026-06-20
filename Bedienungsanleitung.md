@@ -103,6 +103,12 @@ Du bekommst eine persönliche Weiterleitungs-Adresse (Stammdaten → „Belege p
 
 Die SHA-256-Prüfsumme wird mit angezeigt.
 
+**Eigener Reiter „Belege · revisionssicher":** Oben in der Navigation findest du den Reiter **Belege**. Dort sind alle eingegangenen Belege unveränderbar archiviert – jeder mit Inhalts-Prüfsumme (SHA-256) und Zeitstempel. Was du hier tun kannst:
+
+- **Doppelte E-Mails werden automatisch zusammengefasst:** Leitest du dieselbe Bestellbestätigung zweimal weiter, erscheint sie über die Prüfsumme trotzdem nur **einmal**.
+- **„Versiegeltes Manifest exportieren"** erzeugt zwei Dateien (JSON + CSV) für den Steuerberater: eine lückenlose Liste aller Belege mit Prüfsummen und einer **Hash-Kette**. Wird später auch nur ein Beleg verändert oder entfernt, stimmt das Siegel nicht mehr – Manipulation ist sofort sichtbar.
+- **„Integrität prüfen"** liest alle Belege neu ein und vergleicht die Prüfsummen – so siehst du jederzeit, dass nichts verändert wurde.
+
 > Hinweis: Per Mail empfangene Belege liegen serverseitig (anders als der E2E-Tresor) – das ist bei „Mail an eine Adresse" unvermeidbar. Für die steuerliche Anerkennung gehört eine Verfahrensdokumentation dazu (Vorlage liegt bei).
 
 ## 8 · Export für den Steuerberater

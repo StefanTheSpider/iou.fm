@@ -172,6 +172,12 @@
     <li><strong>✉️ .eml = nur das technische Original</strong> (Roh-Nachweis für die Revisionssicherheit). In der Schnell-Vorschau erscheinen oft nur Absender/Betreff und „kein Inhalt" – das ist normal; mit <em>„Öffnen mit Mail"</em> wird sie korrekt angezeigt.</li>
   </ul>
   <p class="note">Die SHA-256-Prüfsumme wird je Beleg angezeigt.</p>
+  <p><strong>Eigener Reiter „Belege · revisionssicher":</strong> Oben in der Navigation findest du den Reiter <strong>Belege</strong>. Dort sind alle eingegangenen Belege unveränderbar archiviert – jeder mit Inhalts-Prüfsumme (SHA-256) und Zeitstempel.</p>
+  <ul>
+    <li><strong>Doppelte E-Mails werden automatisch zusammengefasst:</strong> Dieselbe Bestellbestätigung zweimal weitergeleitet erscheint über die Prüfsumme trotzdem nur <strong>einmal</strong>.</li>
+    <li><strong>„Versiegeltes Manifest exportieren"</strong> erzeugt JSON + CSV für den Steuerberater: eine lückenlose Liste aller Belege mit Prüfsummen und einer <strong>Hash-Kette</strong>. Wird später auch nur ein Beleg verändert oder entfernt, stimmt das Siegel nicht mehr – Manipulation ist sofort sichtbar.</li>
+    <li><strong>„Integrität prüfen"</strong> liest alle Belege neu ein und vergleicht die Prüfsummen – so siehst du jederzeit, dass nichts verändert wurde.</li>
+  </ul>
   <blockquote>Per Mail empfangene Belege liegen serverseitig (anders als der Ende-zu-Ende-verschlüsselte Tresor) – das ist bei „Mail an eine Adresse" technisch unvermeidbar. Für die steuerliche Anerkennung gehört eine Verfahrensdokumentation dazu (Vorlage liegt bei).</blockquote>
 
   <h2 id="buchhalter">8 · Export für den Steuerberater</h2>

@@ -7,6 +7,7 @@ export const IBAN_LENGTHS = {
   IT: 27, ES: 24, PT: 25, IE: 22, GB: 22, PL: 28, CZ: 24, SK: 24, HU: 28,
   SI: 19, HR: 21, DK: 18, SE: 24, NO: 15, FI: 18, EE: 20, LV: 21, LT: 20,
   RO: 24, BG: 22, GR: 27, CY: 28, MT: 31, IS: 26,
+  AD: 24, SM: 27, VA: 22, GI: 23,
 };
 
 // Entfernt alles außer A-Z und 0-9, macht Großbuchstaben.
@@ -36,7 +37,12 @@ export function validateIban(raw) {
     return { ok: false, iban, reason: "ungültiges Format", code: "format" };
   const country = iban.slice(0, 2);
   const expected = IBAN_LENGTHS[country];
-  if (expected && iban.length !== expected)
+  // Unbekanntes Länderkürzel (z. B. "XX" aus einem fehl-erkannten Bestellcode) ist KEINE
+  // gültige IBAN – sofort ablehnen, statt die Längenprüfung zu überspringen. Verhindert,
+  // dass Müll-Strings nur über die Mod-97-Prüfziffer als „gültig" durchrutschen.
+  if (!expected)
+    return { ok: false, iban, reason: `unbekanntes Länderkürzel „${country}" – keine gültige IBAN`, code: "country" };
+  if (iban.length !== expected)
     return { ok: false, iban, reason: `falsche Länge für ${country} (${iban.length}/${expected})`, code: "length" };
   if (mod97(iban) !== 1)
     return { ok: false, iban, reason: "Prüfziffer stimmt nicht", code: "checksum" };
