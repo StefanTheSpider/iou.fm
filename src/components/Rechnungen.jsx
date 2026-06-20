@@ -61,7 +61,19 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
 
   const setInvoices = (fn) => updateData((d) => ({ ...d, invoices: fn(d.invoices || []) }));
   const patchRow = (id, patch) => setInvoices((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const removeRow = (id) => { setInvoices((rs) => rs.filter((x) => x.id !== id)); setConfirmDel(null); };
+  const removeRow = (id) => {
+    // SICHERHEITSNETZ: bezahlte (erledigte) Rechnungen werden NIEMALS gelöscht.
+    const row = (data.invoices || []).find((x) => x.id === id);
+    if (row && row.status === "erledigt") { setConfirmDel(null); return; }
+    // Offene Rechnung sofort speichern UND als Lösch-Merker (Tombstone) festschreiben,
+    // damit sie nach Update/Sync nicht über die additive Zusammenführung wieder reinkommt.
+    updateData((d) => ({
+      ...d,
+      invoices: (d.invoices || []).filter((x) => x.id !== id),
+      deletedIds: Array.from(new Set([...(d.deletedIds || []), id])).slice(-10000),
+    }), true);
+    setConfirmDel(null);
+  };
 
   // Bereits bezahlte Rechnungsnummern (aus früheren Rechnungs-Batches).
   const paidSet = new Set(

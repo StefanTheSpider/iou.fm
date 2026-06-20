@@ -100,7 +100,7 @@ function Suppliers({ data, updateData }) {
     }));
     setName(""); setPurpose(""); iban.setValue(""); iban.setInfo(null);
   }
-  const remove = (id) => updateData((d) => ({ ...d, suppliers: (d.suppliers || []).filter((s) => s.id !== id) }));
+  const remove = (id) => updateData((d) => ({ ...d, suppliers: (d.suppliers || []).filter((s) => s.id !== id), deletedIds: Array.from(new Set([...(d.deletedIds || []), id])).slice(-10000) }), true);
 
   return (
     <div className="card">
@@ -489,7 +489,7 @@ function Accounts({ data, updateData }) {
   }
 
   function remove(id) {
-    updateData((d) => ({ ...d, accounts: (d.accounts || []).filter((a) => a.id !== id) }));
+    updateData((d) => ({ ...d, accounts: (d.accounts || []).filter((a) => a.id !== id), deletedIds: Array.from(new Set([...(d.deletedIds || []), id])).slice(-10000) }), true);
   }
 
   const accounts = data.accounts || [];
