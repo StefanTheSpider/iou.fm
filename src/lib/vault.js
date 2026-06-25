@@ -25,7 +25,18 @@ const dec = new TextDecoder();
 // SHARED_KEYS – sie verlassen das Gerät nie (wie die Löhne). E2E bleibt unangetastet.
 export const DEFAULT_DATA = { accounts: [], suppliers: [], gfIbans: [], refunds: [], invoices: [], creditors: {}, batches: [], deletedIds: [], belegeArchive: {}, shopify: {}, ecommerce: { platform: "shopify" }, branding: {}, ebicsKeys: null, config: { payoutMode: "erstattung", setupComplete: false, modules: { rechnung: false, ebics: false }, ebics: { enabled: false, bankName: "", hostId: "", partnerId: "", userId: "", ebicsUrl: "", version: "H005", status: "uninitialized" } } };
 
-const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+// Bytes -> Base64, chunk-weise. WICHTIG: kein `String.fromCharCode(...bytes)` mit Spread,
+// das übergibt jedes Byte als Argument und sprengt bei großen Daten den Stack
+// ("Maximum call stack size exceeded" – z. B. beim Frischanmelden mit großem Datensatz).
+const b64 = (buf) => {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CHUNK = 0x8000; // 32 KB pro Block – sicher unter dem Argument-Limit
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+};
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
