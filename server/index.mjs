@@ -250,8 +250,17 @@ async function syncTenant(t, { full = false } = {}) {
   const disputeStats = tallyDisputeOutcomes([...disputeNodes, ...resolvedNodes]);
 
   const feed = t.shopifyFeed || { cancellations: [], refunds: [], requests: [] };
-  feed.cancellations = mergeById(feed.cancellations, found.cancellations, (c) => c.orderNumber);
-  feed.refunds = mergeById(feed.refunds, found.refunds, (r) => `${r.orderNumber}|${r.refundId}`);
+  if (full) {
+    // Voll-Resync: die frisch geholten Daten sind AUTORITATIV. Alte Einträge der neu geholten
+    // Bestellungen werden entfernt und durch die frischen ersetzt – so werden Alt-Einträge ohne
+    // Originalbetrag/refundId sicher überschrieben (kein Duplikat, kein 100/100-Rest).
+    const fetchedNums = new Set(nodes.map((n) => normalizeOrder(n).orderNumber).filter(Boolean));
+    feed.cancellations = [...feed.cancellations.filter((c) => !fetchedNums.has(c.orderNumber)), ...found.cancellations];
+    feed.refunds = [...feed.refunds.filter((r) => !fetchedNums.has(r.orderNumber)), ...found.refunds];
+  } else {
+    feed.cancellations = mergeById(feed.cancellations, found.cancellations, (c) => c.orderNumber);
+    feed.refunds = mergeById(feed.refunds, found.refunds, (r) => `${r.orderNumber}|${r.refundId}`);
+  }
   feed.requests = openDisputes; // voller Ersatz: gelöste Disputes verschwinden automatisch
   feed.disputeStats = disputeStats; // Gewinnquote über alle Disputes
   feed.syncedAt = new Date().toISOString();
@@ -300,12 +309,12 @@ async function backfillPaidCents() {
   try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
-    if (!t || t.paidCentsFixedV1) continue;          // einmalig pro Mandant
+    if (!t || t.paidCentsFixedV2) continue;          // einmalig pro Mandant (V2: autoritativer Ersatz)
     if (!t?.integration?.shopify?.token) continue;   // ohne Shopify nichts nachzutragen
-    console.log(`[sync] paidCents-Backfill (einmalig): Voll-Resync fuer tenant=${t.tenantId}`);
+    console.log(`[sync] paidCents-Backfill (V2): Voll-Resync fuer tenant=${t.tenantId}`);
     try {
       await syncTenant(t, { full: true });           // repariert feed.refunds UND appRefunds, schreibt t
-      t.paidCentsFixedV1 = true;
+      t.paidCentsFixedV2 = true;
       await writeTenant(t);
     } catch (e) { console.warn("[sync] Backfill fehlgeschlagen", t.tenantId, e.message); }
   }
