@@ -76,7 +76,7 @@ const tenantFromHeader = (t) => {
   const name = String(t.company || "iou.fm").replace(/[<>"\r\n]/g, "").slice(0, 60) || "iou.fm";
   return `${name} <${tenantSenderAddress(t)}>`;
 };
-async function sendAccountantFor(t, ym) {
+async function sendAccountantFor(t, ym, { auto = false } = {}) {
   const a = t.accountant || {};
   if (!a.enabled || !a.email) return { skipped: true, reason: "not_configured" };
   if (!RESEND_API_KEY) return { skipped: true, reason: "no_resend_key" };
@@ -93,30 +93,50 @@ async function sendAccountantFor(t, ym) {
   });
   t.accountant.lastSentMonth = ym;
   t.accountant.lastSentAt = new Date().toISOString();
+  // Nur der AUTOMATISCHE Monatsversand setzt diesen Marker. Ein manueller Test mitten im
+  // Monat (mit unvollständigen Daten) darf den echten Monatsend-Versand NICHT blockieren.
+  if (auto) t.accountant.lastAutoSentMonth = ym;
   await writeTenant(t);
   return { ok: true, month: ym, to: a.email };
 }
-// Versendet für jeden Tenant den zuletzt ABGESCHLOSSENEN Monat (Vormonat), sofern noch
-// nicht geschehen. lastSentMonth verhindert Doppelversand. Dadurch wird ein am Monatsende
-// verpasster Versand (Server-Neustart/Ausfall) beim nächsten Lauf automatisch NACHGEHOLT.
+// Der zuletzt ABGESCHLOSSENE Monat: am letzten Tag ab 23:59 ist der laufende Monat fertig,
+// sonst gilt der Vormonat. So trifft der Versand exakt das Monatsende UND holt später nach.
+function dueReportMonth(now = new Date()) {
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (isLastDayOfMonth(now) && mins >= (23 * 60 + 59)) return thisMonthKey(now);
+  return prevMonthKey(now);
+}
+// Versendet für jeden Tenant den fälligen (abgeschlossenen) Monat, sofern der AUTOMATISCHE
+// Versand dafür noch nicht lief (lastAutoSentMonth). Damit blockiert ein manueller Test
+// den echten Monatsversand nicht, und ein verpasster Monat (Neustart/Ausfall) wird beim
+// nächsten Lauf automatisch NACHGEHOLT.
 async function runAccountantCatchup() {
   let files = [];
   try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
-  const target = prevMonthKey();
+  const target = dueReportMonth();
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
-    if (t?.accountant?.enabled && t.accountant.lastSentMonth !== target) {
-      try { await sendAccountantFor(t, target); } catch (e) { console.warn("Buchhaltungs-Mail fehlgeschlagen", t.tenantId, e.message); }
+    if (t?.accountant?.enabled && t.accountant.lastAutoSentMonth !== target) {
+      try { await sendAccountantFor(t, target, { auto: true }); } catch (e) { console.warn("Buchhaltungs-Mail fehlgeschlagen", t.tenantId, e.message); }
     }
   }
 }
 function scheduleMonthlyMail() {
-  // Robust statt „nur am letzten Tag um 23:59": beim Start (Nachhol-Prüfung nach Neustart)
-  // UND danach täglich. Der Report kommt Anfang des Folgemonats – der Monat ist dann komplett.
-  const DAY = 24 * 60 * 60 * 1000;
+  // Dreifach abgesichert, unabhängig von App-Nutzung:
+  //   1) beim Start (holt einen nach Neustart/Ausfall verpassten Monat nach),
+  //   2) präzise jeden Tag um 23:59 (trifft das Monatsende exakt),
+  //   3) alle 6 h als Sicherheitsnetz (falls der 23:59-Tick durch einen Neustart ausfiel).
+  // lastAutoSentMonth verhindert dabei jeden Doppelversand.
   const run = () => runAccountantCatchup().catch((e) => console.warn("Buchhaltungs-Mail-Tick:", e.message));
-  setTimeout(run, 30 * 1000); // kurz nach dem Start
-  setInterval(run, DAY);      // danach täglich
+  setTimeout(run, 30 * 1000);                 // 1) kurz nach dem Start
+  setInterval(run, 6 * 60 * 60 * 1000);       // 3) alle 6 Stunden
+  const msUntil2359 = () => {                 // 2) täglich exakt 23:59
+    const n = new Date(); const x = new Date(n); x.setHours(23, 59, 0, 0);
+    if (x <= n) x.setDate(x.getDate() + 1);
+    return x - n;
+  };
+  const daily = () => { run(); setTimeout(daily, msUntil2359()); };
+  setTimeout(daily, msUntil2359());
 }
 const SUPPORT_FILE = path.join(DATA_DIR, "support.json");
 const supportAuth = (req) => !!SUPPORT_KEY && eq(bearer(req), SUPPORT_KEY);
