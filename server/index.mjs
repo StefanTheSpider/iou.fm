@@ -25,7 +25,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
-import { buildAccountantCsv, thisMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
+import { buildAccountantCsv, thisMonthKey, prevMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, planForPriceId, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
 import { inboxAddress, newInboxToken, tokenFromAddress, sha256Hex, safeName } from "./inbound.mjs";
@@ -96,30 +96,27 @@ async function sendAccountantFor(t, ym) {
   await writeTenant(t);
   return { ok: true, month: ym, to: a.email };
 }
-async function runAllAccountantMails() {
+// Versendet für jeden Tenant den zuletzt ABGESCHLOSSENEN Monat (Vormonat), sofern noch
+// nicht geschehen. lastSentMonth verhindert Doppelversand. Dadurch wird ein am Monatsende
+// verpasster Versand (Server-Neustart/Ausfall) beim nächsten Lauf automatisch NACHGEHOLT.
+async function runAccountantCatchup() {
   let files = [];
   try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
-  const ym = thisMonthKey();
+  const target = prevMonthKey();
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
-    if (t?.accountant?.enabled && t.accountant.lastSentMonth !== ym) {
-      try { await sendAccountantFor(t, ym); } catch (e) { console.warn("Buchhaltungs-Mail fehlgeschlagen", t.tenantId, e.message); }
+    if (t?.accountant?.enabled && t.accountant.lastSentMonth !== target) {
+      try { await sendAccountantFor(t, target); } catch (e) { console.warn("Buchhaltungs-Mail fehlgeschlagen", t.tenantId, e.message); }
     }
   }
 }
 function scheduleMonthlyMail() {
-  const msUntil2359 = () => {
-    const n = new Date(); const next = new Date(n);
-    next.setHours(23, 59, 0, 0);
-    if (next <= n) next.setDate(next.getDate() + 1);
-    return next - n;
-  };
-  const tick = async () => {
-    try { if (isLastDayOfMonth(new Date())) await runAllAccountantMails(); }
-    catch (e) { console.warn("Monats-Mail-Tick:", e.message); }
-    setTimeout(tick, msUntil2359());
-  };
-  setTimeout(tick, msUntil2359());
+  // Robust statt „nur am letzten Tag um 23:59": beim Start (Nachhol-Prüfung nach Neustart)
+  // UND danach täglich. Der Report kommt Anfang des Folgemonats – der Monat ist dann komplett.
+  const DAY = 24 * 60 * 60 * 1000;
+  const run = () => runAccountantCatchup().catch((e) => console.warn("Buchhaltungs-Mail-Tick:", e.message));
+  setTimeout(run, 30 * 1000); // kurz nach dem Start
+  setInterval(run, DAY);      // danach täglich
 }
 const SUPPORT_FILE = path.join(DATA_DIR, "support.json");
 const supportAuth = (req) => !!SUPPORT_KEY && eq(bearer(req), SUPPORT_KEY);
