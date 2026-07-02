@@ -606,6 +606,11 @@ function AccountantSettings({ accountant }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  // Monat für den manuellen Versand – Standard: der zuletzt abgeschlossene Monat (Vormonat).
+  const [sendMonth, setSendMonth] = useState(() => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   useEffect(() => {
     accountant.get().then((a) => {
@@ -620,7 +625,7 @@ function AccountantSettings({ accountant }) {
   }
   async function sendNow() {
     setErr(""); setMsg(""); setBusy("send");
-    try { const r = await accountant.sendNow(); setMsg(`Testmail gesendet (${r.month}) an ${r.to}.`); }
+    try { const r = await accountant.sendNow(sendMonth || undefined); setMsg(`Versand ausgelöst für ${r.month || sendMonth} an ${r.to || email}.`); }
     catch (e) { setErr(e.message); } finally { setBusy(""); }
   }
 
@@ -649,8 +654,12 @@ function AccountantSettings({ accountant }) {
       <div className="toolbar" style={{ marginBottom: 0 }}>
         <button className="btn ghost" onClick={save} disabled={!!busy}>{busy === "save" ? "Speichere…" : "Speichern"}</button>
         <div className="spacer" />
-        <button className="btn" onClick={sendNow} disabled={!!busy || !email.trim()}>{busy === "send" ? "Sende…" : "Testmail jetzt senden"}</button>
+        <label className="muted" style={{ display: "flex", gap: 6, alignItems: "center" }}>Monat
+          <input type="month" value={sendMonth} onChange={(e) => setSendMonth(e.target.value)} style={{ maxWidth: 170 }} />
+        </label>
+        <button className="btn" onClick={sendNow} disabled={!!busy || !email.trim() || !sendMonth}>{busy === "send" ? "Sende…" : "Monat jetzt senden"}</button>
       </div>
+      <p className="note" style={{ margin: "6px 0 0", fontSize: 12 }}>Schickt den Report für den gewählten Monat sofort (an Steuerberater + CC an dich) – z. B. um einen Monat nachträglich oder korrigiert zu versenden.</p>
     </div>
   );
 }
