@@ -24,7 +24,7 @@ import http from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders } from "./shopify.mjs";
+import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders, normalizeOrder, fetchOrdersByNames } from "./shopify.mjs";
 import { buildAccountantCsv, thisMonthKey, prevMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, planForPriceId, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
@@ -78,25 +78,39 @@ const tenantFromHeader = (t) => {
 };
 async function sendAccountantFor(t, ym, { auto = false } = {}) {
   const a = t.accountant || {};
-  if (!a.enabled || !a.email) return { skipped: true, reason: "not_configured" };
-  if (!RESEND_API_KEY) return { skipped: true, reason: "no_resend_key" };
+  if (!a.enabled || !a.email) {
+    console.warn(`[buchhalter] SKIP tenant=${t.tenantId} monat=${ym} grund=not_configured (enabled=${!!a.enabled}, email=${a.email ? "gesetzt" : "LEER"})`);
+    return { skipped: true, reason: "not_configured" };
+  }
+  if (!RESEND_API_KEY) {
+    console.warn(`[buchhalter] SKIP tenant=${t.tenantId} monat=${ym} grund=no_resend_key (RESEND_API_KEY fehlt in den Railway-Variablen!)`);
+    return { skipped: true, reason: "no_resend_key" };
+  }
   const csv = buildAccountantCsv(t.shopifyFeed || {}, ym, t.appRefunds || []);
   // WICHTIG: über die verifizierte Versand-Domain senden (SEND_DOMAIN, z. B. iou-tech.com).
   // Nicht RESEND_FROM verwenden – das zeigt evtl. noch auf eine alte, nicht mehr in Resend
   // verifizierte Domain (z. B. fork-and-merge.com) und führt zu „domain is not verified" (403).
   if (!t.senderToken) t.senderToken = newInboxToken();
-  await sendViaResend({
-    apiKey: RESEND_API_KEY, from: tenantFromHeader(t), to: a.email, cc: a.cc || null,
-    subject: `Stornos & Erstattungen ${ym} – ${t.company || "iou.fm"}`,
-    text: `Anbei die Stornierungen und Rückerstattungen für ${ym}.\n\nAutomatisch erstellt von iou.fm.`,
-    filename: `Stornos_Erstattungen_${ym}.csv`, csv,
-  });
+  const fromHeader = tenantFromHeader(t);
+  try {
+    await sendViaResend({
+      apiKey: RESEND_API_KEY, from: fromHeader, to: a.email, cc: a.cc || null,
+      subject: `Stornos & Erstattungen ${ym} – ${t.company || "iou.fm"}`,
+      text: `Anbei die Stornierungen und Rückerstattungen für ${ym}.\n\nAutomatisch erstellt von iou.fm.`,
+      filename: `Stornos_Erstattungen_${ym}.csv`, csv,
+    });
+  } catch (e) {
+    // Häufigste echte Ursache: Absender-Domain in Resend nicht verifiziert (403).
+    console.error(`[buchhalter] RESEND-FEHLER tenant=${t.tenantId} monat=${ym} from="${fromHeader}" to=${a.email} cc=${a.cc || "-"} SEND_DOMAIN=${SEND_DOMAIN}: ${e.message}`);
+    throw e;
+  }
   t.accountant.lastSentMonth = ym;
   t.accountant.lastSentAt = new Date().toISOString();
   // Nur der AUTOMATISCHE Monatsversand setzt diesen Marker. Ein manueller Test mitten im
   // Monat (mit unvollständigen Daten) darf den echten Monatsend-Versand NICHT blockieren.
   if (auto) t.accountant.lastAutoSentMonth = ym;
   await writeTenant(t);
+  console.log(`[buchhalter] GESENDET tenant=${t.tenantId} monat=${ym} to=${a.email} cc=${a.cc || "-"} from="${fromHeader}" auto=${auto}`);
   return { ok: true, month: ym, to: a.email };
 }
 // Der zuletzt ABGESCHLOSSENE Monat: am letzten Tag ab 23:59 ist der laufende Monat fertig,
@@ -112,13 +126,21 @@ function dueReportMonth(now = new Date()) {
 // nächsten Lauf automatisch NACHGEHOLT.
 async function runAccountantCatchup() {
   let files = [];
-  try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
+  try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); }
+  catch (e) { console.warn("[buchhalter] TENANT_DIR nicht lesbar:", e.message); return; }
   const target = dueReportMonth();
+  console.log(`[buchhalter] Lauf gestartet: faelliger Monat=${target}, ${files.length} Mandant(en), RESEND_API_KEY=${RESEND_API_KEY ? "gesetzt" : "FEHLT"}, SEND_DOMAIN=${SEND_DOMAIN}`);
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
-    if (t?.accountant?.enabled && t.accountant.lastAutoSentMonth !== target) {
-      try { await sendAccountantFor(t, target, { auto: true }); } catch (e) { console.warn("Buchhaltungs-Mail fehlgeschlagen", t.tenantId, e.message); }
+    const a = t?.accountant || {};
+    if (!a.enabled) continue;
+    if (a.lastAutoSentMonth === target) {
+      console.log(`[buchhalter] tenant=${t.tenantId} monat=${target} bereits automatisch versandt – ueberspringe`);
+      continue;
     }
+    console.log(`[buchhalter] tenant=${t.tenantId} monat=${target}: sende … (email=${a.email || "LEER"}, cc=${a.cc || "-"})`);
+    try { await sendAccountantFor(t, target, { auto: true }); }
+    catch (e) { console.warn(`[buchhalter] fehlgeschlagen tenant=${t.tenantId}: ${e.message}`); }
   }
 }
 function scheduleMonthlyMail() {
@@ -205,15 +227,20 @@ const mergeById = (existing = [], incoming = [], keyFn) => {
 };
 
 // Holt Stornos/Refunds/Anfragen seit letztem Lauf und schreibt sie in den Feed.
-async function syncTenant(t) {
+async function syncTenant(t, { full = false } = {}) {
   const intg = t.integration;
   if (!intg || !intg.shopify || !intg.shopify.token || !intg.shopify.domain) return { skipped: true };
-  const since = intg.lastSyncAt || new Date(Date.now() - 90 * DAY).toISOString();
+  // Voll-Resync (full=true): weiter zurückgehen UND alle Ereignisse neu extrahieren, damit
+  // fehlende Felder (z. B. paidCents = ursprünglich gezahlter Bestellbetrag) auf bestehenden
+  // Einträgen per mergeById nachgetragen werden.
+  const since = full ? new Date(Date.now() - 120 * DAY).toISOString()
+                     : (intg.lastSyncAt || new Date(Date.now() - 90 * DAY).toISOString());
+  const extractSince = full ? null : (intg.lastSyncAt || null);
   const token = decToken(intg.shopify.token);
   if (!token) return { skipped: true, reason: "token_unreadable" };
-  // 1) Stornos + Rückerstattungen seit letztem Lauf (Archiv, wird angehängt).
+  // 1) Stornos + Rückerstattungen (Archiv, wird gemischt; „Neues gewinnt").
   const nodes = await fetchOrdersSince(intg.shopify.domain, token, since);
-  const found = collectFromOrders(nodes, { tagCfg: intg.tags || {}, since: intg.lastSyncAt || null });
+  const found = collectFromOrders(nodes, { tagCfg: intg.tags || {}, since: extractSince });
   // 2) Offene Rückbuchungen/Disputes (Live-Snapshot, datumsunabhängig).
   const disputeNodes = await fetchOpenDisputeOrders(intg.shopify.domain, token);
   const openDisputes = collectFromOrders(disputeNodes, { tagCfg: intg.tags || {} })
@@ -230,6 +257,28 @@ async function syncTenant(t) {
   feed.syncedAt = new Date().toISOString();
   t.shopifyFeed = feed;
   t.integration.lastSyncAt = feed.syncedAt;
+
+  // Voll-Resync: „Urspr. gezahlt" (paidCents) auch auf App/SEPA-Erstattungen nachtragen –
+  // aus dem Shopify-Bestell-Gesamtbetrag. So stimmt der Buchhalter-Report auch bei
+  // Teilerstattungen per SEPA (paidCents = ursprünglich gezahlt, nicht der Erstattungsbetrag).
+  if (full && Array.isArray(t.appRefunds) && t.appRefunds.length) {
+    const totals = {};
+    const addNode = (node) => { const o = normalizeOrder(node); const n = String(o.orderNumber || "").replace(/^#/, ""); if (n) totals[n] = o.totalCents; };
+    for (const node of nodes) addNode(node);
+    // App/SEPA-Bestellungen, die nicht im Fenster lagen, gezielt per Nummer nachladen.
+    const need = t.appRefunds.map((a) => String(a.orderNumber || "").replace(/^#/, "")).filter((n) => n && totals[n] == null);
+    if (need.length) {
+      try { for (const node of await fetchOrdersByNames(intg.shopify.domain, token, need)) addNode(node); }
+      catch (e) { console.warn("[sync] App/SEPA-Bestellungen nachladen fehlgeschlagen:", e.message); }
+    }
+    let patched = 0;
+    for (const a of t.appRefunds) {
+      const n = String(a.orderNumber || "").replace(/^#/, "");
+      if (totals[n] != null && a.paidCents !== totals[n]) { a.paidCents = totals[n]; patched++; }
+    }
+    if (patched) console.log(`[sync] appRefunds paidCents korrigiert: ${patched} Eintrag/e fuer tenant=${t.tenantId}`);
+  }
+
   await writeTenant(t);
   return { ok: true, scanned: nodes.length, disputesScanned: disputeNodes.length, resolvedScanned: resolvedNodes.length, cancellations: found.cancellations.length, refunds: found.refunds.length, requests: openDisputes.length, winRate: disputeStats.winRate, syncedAt: feed.syncedAt };
 }
@@ -240,6 +289,25 @@ async function runAllSyncs() {
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
     if (t) { try { await syncTenant(t); } catch (e) { console.warn("Sync fehlgeschlagen", t.tenantId, e.message); } }
+  }
+}
+
+// Einmal-Reparatur beim Start: fehlt bei Feed-Erstattungen der ursprünglich gezahlte
+// Bestellbetrag (paidCents), wird per Voll-Resync nachgetragen (mergeById aktualisiert die
+// Alt-Einträge). Self-healing: sobald alle paidCents haben, macht das nichts mehr.
+async function backfillPaidCents() {
+  let files = [];
+  try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
+  for (const f of files) {
+    const t = await readJson(path.join(TENANT_DIR, f));
+    if (!t || t.paidCentsFixedV1) continue;          // einmalig pro Mandant
+    if (!t?.integration?.shopify?.token) continue;   // ohne Shopify nichts nachzutragen
+    console.log(`[sync] paidCents-Backfill (einmalig): Voll-Resync fuer tenant=${t.tenantId}`);
+    try {
+      await syncTenant(t, { full: true });           // repariert feed.refunds UND appRefunds, schreibt t
+      t.paidCentsFixedV1 = true;
+      await writeTenant(t);
+    } catch (e) { console.warn("[sync] Backfill fehlgeschlagen", t.tenantId, e.message); }
   }
 }
 
@@ -1311,6 +1379,8 @@ server.listen(PORT, () => {
   console.log(`iou.fm sync-hub on :${PORT}  (data: ${DATA_DIR}, TZ: ${process.env.TZ || "system"})`);
   scheduleNightly();
   scheduleMonthlyMail();
+  // Einmalige Reparatur des Originalbetrags (paidCents) bei Alt-Erstattungen, kurz nach Start.
+  setTimeout(() => { backfillPaidCents().catch((e) => console.warn("[sync] Backfill-Fehler:", e.message)); }, 60 * 1000);
 });
 
 export { server };

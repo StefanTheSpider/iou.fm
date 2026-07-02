@@ -170,6 +170,20 @@ export function fetchOrdersSince(domain, token, sinceIso) {
   return fetchOrdersByQuery(domain, token, `updated_at:>=${sinceIso}`);
 }
 
+// Bestellungen gezielt per Nummer/Name holen – z. B. um den ursprünglich gezahlten
+// Gesamtbetrag für App/SEPA-Erstattungen nachzutragen, deren Shopify-`updated_at`
+// außerhalb des normalen Sync-Fensters liegt.
+export async function fetchOrdersByNames(domain, token, names = []) {
+  const clean = [...new Set((names || []).map((n) => String(n).replace(/^#/, "").trim()).filter(Boolean))];
+  const out = [];
+  const CHUNK = 25;
+  for (let i = 0; i < clean.length; i += CHUNK) {
+    const q = clean.slice(i, i + CHUNK).map((n) => `name:${n}`).join(" OR ");
+    out.push(...await fetchOrdersByQuery(domain, token, q));
+  }
+  return out;
+}
+
 // Alle Bestellungen mit OFFENER Rückbuchung (Dispute) – unabhängig vom Datum,
 // damit auch alte Bestellungen mit neuer Reklamation erscheinen.
 export function fetchOpenDisputeOrders(domain, token) {
