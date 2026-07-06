@@ -78,7 +78,7 @@ export function fulfillmentsForMonth(feed, ym) {
 export function buildFulfillmentsCsv(feed, ym) {
   const entries = fulfillmentsForMonth(feed, ym);
   if (!entries.length) return "";
-  const head = ["Kunde", "Bestellnummer", "Betrag (EUR)", "Zahlungsmethode", "Veranstaltung", "Veranstaltungsdatum", "Versanddatum", "Kategorie"];
+  const head = ["Kunde", "Bestellnummer", "Betrag (EUR)", "Zahlungsmethode", "Veranstaltung", "Veranstaltungsdatum", "Ausführungsdatum", "Kategorie"];
   const rows = entries.map((f) => [
     f.customer || "", f.orderNumber || "", eur(f.amountCents), f.paymentMethod || "",
     f.event || "", deDate(f.eventDate), deDate(f.date), f.category || "",

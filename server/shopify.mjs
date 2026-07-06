@@ -32,11 +32,16 @@ const GATEWAY_LABELS = {
   klarna: "Klarna", klarna_payments: "Klarna", amazon_payments: "Amazon Pay", amazon_pay: "Amazon Pay",
   sofort: "Sofortüberweisung", "bank_transfer": "Überweisung", banktransfer: "Überweisung",
   manual: "Überweisung/Manuell", gift_card: "Gutschein", "apple pay": "Apple Pay", google_pay: "Google Pay",
+  // Deutsche, manuell benannte Gateways (Shopify liefert sie wörtlich, hier kleingeschrieben als Key):
+  "überweisung": "Überweisung", vorkasse: "Vorkasse", rechnung: "Kauf auf Rechnung",
+  nachnahme: "Nachnahme", barzahlung: "Barzahlung", lastschrift: "SEPA-Lastschrift", sepa: "SEPA-Lastschrift",
 };
+const capFirst = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 export function paymentMethodLabel(gateways = []) {
   const g = (Array.isArray(gateways) ? gateways : [gateways]).map((x) => lc(x)).filter(Boolean);
   if (!g.length) return "";
-  return [...new Set(g.map((x) => GATEWAY_LABELS[x] || x))].join(", ");
+  // Unbekannte Gateways: wenigstens den ersten Buchstaben groß (statt roher Kleinschreibung).
+  return [...new Set(g.map((x) => GATEWAY_LABELS[x] || capFirst(x)))].join(", ");
 }
 
 // GraphQL-Order-Node -> einheitliches Objekt.

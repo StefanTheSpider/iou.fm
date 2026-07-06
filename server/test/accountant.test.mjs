@@ -51,7 +51,7 @@ const vfeed = { fulfillments: [
 const vcsv = buildFulfillmentsCsv(vfeed, "2026-06");
 ok(vcsv.charCodeAt(0) === 0xFEFF, "Versand-CSV: UTF-8-BOM");
 const vhead = vcsv.replace(/^﻿/, "").split("\r\n")[0];
-ok(vhead === "Kunde;Bestellnummer;Betrag (EUR);Zahlungsmethode;Veranstaltung;Veranstaltungsdatum;Versanddatum;Kategorie", "Versand-CSV: Kopfzeile");
+ok(vhead === "Kunde;Bestellnummer;Betrag (EUR);Zahlungsmethode;Veranstaltung;Veranstaltungsdatum;Ausführungsdatum;Kategorie", "Versand-CSV: Kopfzeile");
 ok(vcsv.includes("Anna;3001;798,00;PayPal;Metallica Berlin;01.08.2026;05.06.2026;Konzerte DE"), "Versand-CSV: Juni-Zeile korrekt");
 ok(!vcsv.includes("3002"), "Versand-CSV: Mai-Bestellung nicht im Juni");
 ok(buildFulfillmentsCsv({ fulfillments: [] }, "2026-06") === "", "Versand-CSV: leer wenn keine (nicht senden)");

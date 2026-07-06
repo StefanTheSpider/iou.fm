@@ -117,7 +117,7 @@ Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als D
 
 Der automatische Versand läuft **immer am Monatsende um 23:59** – unabhängig davon, ob die App gerade offen ist. Lag im Monat mindestens eine ausgeführte Bestellung vor, hängt die Mail zusätzlich das **Versand-Archiv** des Monats als zweite CSV an. Einen einzelnen Monat kannst du in den Stammdaten (Belege & Buchhaltung → Monat wählen → „Monat jetzt senden") auch manuell nachschicken.
 
-**Eigener Reiter „Versand-Archiv":** Oben in der Navigation findest du den Reiter **Versand-Archiv**. Dort stehen alle in Shopify **ausgeführten (versendeten)** Bestellungen – je mit **Kunde, Bestellnummer, Betrag, Zahlungsmethode, Veranstaltung und Veranstaltungsdatum**. Er füllt sich automatisch beim Abgleich. Über **„Als CSV exportieren"** lädst du die Liste (Umlaut-sicher) in „Downloads"; mit dem Suchfeld filterst du nach Bestellnummer, Kunde oder Veranstaltung.
+**Eigener Reiter „Versand-Archiv":** Oben in der Navigation findest du den Reiter **Versand-Archiv**. Dort stehen alle in Shopify **ausgeführten (versendeten)** Bestellungen – je mit **Kunde, Bestellnummer, Betrag, Zahlungsmethode, Veranstaltung, Veranstaltungsdatum und Ausführungsdatum** (wann die Bestellung versendet/ausgeführt wurde). Er füllt sich automatisch beim Abgleich. Du kannst nach **Zeitraum (Monat), Zahlungsmethode und Kategorie** filtern, nach **Ausführungsdatum, Veranstaltungsdatum oder Betrag** sortieren und im Suchfeld nach Bestellnummer, Kunde oder Veranstaltung suchen – unten siehst du jeweils **Anzahl und Summe** der gefilterten Bestellungen. Über **„Als CSV exportieren"** lädst du genau die gefilterte Liste (Umlaut-sicher) in „Downloads".
 
 ## 9 · Direkt an die Bank senden (EBICS, Bank-Tarif)
 

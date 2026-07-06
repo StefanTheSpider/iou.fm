@@ -234,14 +234,15 @@ const mergeById = (existing = [], incoming = [], keyFn) => {
 };
 
 // Holt Stornos/Refunds/Anfragen seit letztem Lauf und schreibt sie in den Feed.
-async function syncTenant(t, { full = false } = {}) {
+async function syncTenant(t, { full = false, sinceOverride = null } = {}) {
   const intg = t.integration;
   if (!intg || !intg.shopify || !intg.shopify.token || !intg.shopify.domain) return { skipped: true };
   // Voll-Resync (full=true): weiter zurückgehen UND alle Ereignisse neu extrahieren, damit
-  // fehlende Felder (z. B. paidCents = ursprünglich gezahlter Bestellbetrag) auf bestehenden
-  // Einträgen per mergeById nachgetragen werden.
-  const since = full ? new Date(Date.now() - 120 * DAY).toISOString()
-                     : (intg.lastSyncAt || new Date(Date.now() - 90 * DAY).toISOString());
+  // fehlende Felder (z. B. paidCents = ursprünglich gezahlter Bestellbetrag, Zahlungsmethode)
+  // auf bestehenden Einträgen nachgetragen werden. `sinceOverride` erlaubt ein tieferes Fenster
+  // (z. B. ab 1.1. für den einmaligen Rückwirkend-Backfill).
+  const since = sinceOverride || (full ? new Date(Date.now() - 120 * DAY).toISOString()
+                     : (intg.lastSyncAt || new Date(Date.now() - 90 * DAY).toISOString()));
   const extractSince = full ? null : (intg.lastSyncAt || null);
   const token = decToken(intg.shopify.token);
   if (!token) return { skipped: true, reason: "token_unreadable" };
@@ -333,6 +334,27 @@ async function backfillPaidCents() {
       t.paidCentsFixedV3 = true;
       await writeTenant(t);
     } catch (e) { console.warn("[sync] Backfill fehlgeschlagen", t.tenantId, e.message); }
+  }
+}
+
+// Einmal-Backfill rückwirkend ab 1. Januar des laufenden Jahres. Voller, AUTORITATIVER Resync
+// mit tiefem Fenster (updated_at >= 1.1.): trägt fehlende Zahlungsmethode + Originalbetrag auf
+// Stornos/Erstattungen nach UND befüllt das Versand-Archiv (inkl. Ausführungsdatum) ab Januar.
+async function backfillFromJan() {
+  let files = [];
+  try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
+  const sinceIso = `${new Date().getFullYear()}-01-01T00:00:00Z`;
+  for (const f of files) {
+    const t = await readJson(path.join(TENANT_DIR, f));
+    if (!t || t.backfilledJanV1) continue;                    // einmalig pro Mandant
+    const intg = t.integration;
+    if (!intg?.shopify?.token || !intg?.shopify?.domain) { t.backfilledJanV1 = true; await writeTenant(t); continue; }
+    console.log(`[sync] Backfill ab ${sinceIso} (Zahlungsmethode + Versand-Archiv) fuer tenant=${t.tenantId}`);
+    try {
+      await syncTenant(t, { full: true, sinceOverride: sinceIso });
+      t.backfilledJanV1 = true;
+      await writeTenant(t);
+    } catch (e) { console.warn("[sync] Januar-Backfill fehlgeschlagen", t.tenantId, e.message); }
   }
 }
 
@@ -1417,6 +1439,8 @@ server.listen(PORT, () => {
   scheduleMonthlyMail();
   // Einmalige Reparatur des Originalbetrags (paidCents) bei Alt-Erstattungen, kurz nach Start.
   setTimeout(() => { backfillPaidCents().catch((e) => console.warn("[sync] Backfill-Fehler:", e.message)); }, 60 * 1000);
+  // Danach: rückwirkender Voll-Resync ab 1. Januar (Zahlungsmethode nachtragen + Versand-Archiv befüllen).
+  setTimeout(() => { backfillFromJan().catch((e) => console.warn("[sync] Januar-Backfill-Fehler:", e.message)); }, 150 * 1000);
 });
 
 export { server };
