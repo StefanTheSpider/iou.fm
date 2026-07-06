@@ -16,19 +16,48 @@ export function deriveEventLabel(title) {
 
 const cents = (m) => Math.round(parseFloat((m && m.amount) || "0") * 100);
 
+// Veranstaltungsdatum aus dem Ticket-Titel/„_description" parsen: „…Sa. 11.07.2026…" -> „2026-07-11".
+export function parseEventDate(text = "") {
+  // DD.MM.YYYY irgendwo im Text (auch von „_"/Buchstaben umgeben, z. B. „Sa. 11.07.2026_…").
+  const m = String(text || "").match(/(?<!\d)(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)/);
+  if (!m) return null;
+  const [, d, mo, y] = m;
+  const iso = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
+}
+
+// Zahlungsmethode(n) menschenlesbar aus Shopify-Gateway-Namen.
+const GATEWAY_LABELS = {
+  shopify_payments: "Kreditkarte (Shopify Payments)", paypal: "PayPal", "paypal express checkout": "PayPal",
+  klarna: "Klarna", klarna_payments: "Klarna", amazon_payments: "Amazon Pay", amazon_pay: "Amazon Pay",
+  sofort: "Sofortüberweisung", "bank_transfer": "Überweisung", banktransfer: "Überweisung",
+  manual: "Überweisung/Manuell", gift_card: "Gutschein", "apple pay": "Apple Pay", google_pay: "Google Pay",
+};
+export function paymentMethodLabel(gateways = []) {
+  const g = (Array.isArray(gateways) ? gateways : [gateways]).map((x) => lc(x)).filter(Boolean);
+  if (!g.length) return "";
+  return [...new Set(g.map((x) => GATEWAY_LABELS[x] || x))].join(", ");
+}
+
 // GraphQL-Order-Node -> einheitliches Objekt.
 export function normalizeOrder(node) {
   const li = node.lineItems?.edges?.[0]?.node || {};
   const money = node.totalPriceSet?.shopMoney || node.currentTotalPriceSet?.shopMoney || {};
+  const descr = (li.customAttributes || []).find((a) => a && a.key === "_description")?.value || "";
   return {
     orderNumber: (node.name || "").replace(/^#/, ""),
     customer: node.customer?.displayName || node.billingAddress?.name || "",
     title: li.title || "",
     event: deriveEventLabel(li.title),
+    eventDate: parseEventDate(li.title) || parseEventDate(descr),   // Veranstaltungsdatum aus Titel/Beschreibung
     productType: li.product?.productType || "",
     productTags: li.product?.tags || [],
     orderTags: node.tags || [],
     gateways: node.paymentGatewayNames || [],
+    paymentMethod: paymentMethodLabel(node.paymentGatewayNames),    // Zahlungsmethode (menschenlesbar)
+    fulfillmentStatus: node.displayFulfillmentStatus || "",
+    fulfilledAt: node.fulfillments?.[0]?.createdAt || null,   // Versanddatum (erste Fulfillment)
+    createdAt: node.createdAt || null,
     currency: money.currencyCode || "EUR",
     totalCents: cents(money),
     cancelledAt: node.cancelledAt || null,
@@ -73,6 +102,7 @@ const after = (date, since) => !since || (date && date > since);
 // Aus einem Order: neue Stornierungen + neue Rückerstattungen seit `since`.
 export function extractEvents(order, tagCfg, since) {
   const base = { orderNumber: order.orderNumber, customer: order.customer, event: order.event,
+    eventDate: order.eventDate || null, paymentMethod: order.paymentMethod || "",
     category: categorize(order, tagCfg), currency: order.currency };
   const cancellations = [];
   const refunds = [];
@@ -86,6 +116,27 @@ export function extractEvents(order, tagCfg, since) {
     }
   }
   return { cancellations, refunds };
+}
+
+// Versand-Archiv: ausgeführte (fulfilled) Bestellungen zu einem Archiv-Eintrag aufbereiten.
+export function extractFulfillment(order, tagCfg = {}) {
+  if (!/FULFILLED/i.test(order.fulfillmentStatus || "")) return null;
+  return {
+    orderNumber: order.orderNumber, customer: order.customer,
+    amountCents: order.totalCents, currency: order.currency,
+    event: order.event, eventDate: order.eventDate || null,
+    category: categorize(order, tagCfg), paymentMethod: order.paymentMethod || "",
+    date: order.fulfilledAt || order.createdAt || null,   // Versanddatum (für Monatsgruppierung)
+    orderDate: order.createdAt || null,
+  };
+}
+export function collectFulfillments(nodes, { tagCfg = {} } = {}) {
+  const out = [];
+  for (const node of nodes || []) {
+    const f = extractFulfillment(normalizeOrder(node), tagCfg);
+    if (f && f.orderNumber) out.push(f);
+  }
+  return out;
 }
 
 // Zahlungsreklamationen / Rückbuchungen (Disputes) aus Shopify.
@@ -133,14 +184,15 @@ query($q: String!, $cursor: String) {
   orders(first: 100, query: $q, after: $cursor, sortKey: UPDATED_AT) {
     pageInfo { hasNextPage endCursor }
     edges { node {
-      name createdAt updatedAt cancelledAt cancelReason displayFinancialStatus
+      name createdAt updatedAt cancelledAt cancelReason displayFinancialStatus displayFulfillmentStatus
       tags paymentGatewayNames
       customer { displayName }
       billingAddress { name }
       totalPriceSet { shopMoney { amount currencyCode } }
-      lineItems(first: 5) { edges { node { title quantity product { productType tags } } } }
+      lineItems(first: 5) { edges { node { title quantity customAttributes { key value } product { productType tags } } } }
       refunds { id createdAt totalRefundedSet { shopMoney { amount currencyCode } } }
       disputes { id initiatedAs status }
+      fulfillments(first: 1) { createdAt }
     } }
   }
 }`;
@@ -168,6 +220,11 @@ async function fetchOrdersByQuery(domain, token, q) {
 // Bestellungen seit `sinceIso` (für neue Stornierungen + Rückerstattungen).
 export function fetchOrdersSince(domain, token, sinceIso) {
   return fetchOrdersByQuery(domain, token, `updated_at:>=${sinceIso}`);
+}
+
+// Ausgeführte (fulfilled) Bestellungen seit `sinceIso` – für das Versand-Archiv.
+export function fetchFulfilledOrders(domain, token, sinceIso) {
+  return fetchOrdersByQuery(domain, token, `fulfillment_status:fulfilled AND updated_at:>=${sinceIso}`);
 }
 
 // Bestellungen gezielt per Nummer/Name holen – z. B. um den ursprünglich gezahlten

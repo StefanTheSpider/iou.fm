@@ -24,6 +24,7 @@ export function combinedEntries(feed, appRefunds = []) {
       art: cancelledOrders.has(r.orderNumber) ? "Storniert & erstattet" : "Erstattung",
       event: r.event, date: r.date, customer: r.customer, orderNumber: r.orderNumber,
       category: r.category, amountCents: r.amountCents, paidCents: r.paidCents ?? r.amountCents,
+      paymentMethod: r.paymentMethod || "",
       purpose: r.purpose || vz("Erstattung", r.orderNumber, r.event),
     });
   }
@@ -32,6 +33,7 @@ export function combinedEntries(feed, appRefunds = []) {
     rows.push({
       art: "Stornierung", event: c.event, date: c.date, customer: c.customer, orderNumber: c.orderNumber,
       category: c.category, amountCents: c.amountCents, paidCents: c.amountCents,
+      paymentMethod: c.paymentMethod || "",
       purpose: vz("Stornierung", c.orderNumber, c.event),
     });
   }
@@ -39,6 +41,7 @@ export function combinedEntries(feed, appRefunds = []) {
     rows.push({
       art: "Erstattung (App/SEPA)", event: a.event, date: a.date, customer: a.customer, orderNumber: a.orderNumber,
       category: a.category || "", amountCents: a.amountCents, paidCents: a.paidCents ?? a.amountCents,
+      paymentMethod: a.paymentMethod || "",
       purpose: a.purpose || vz("Erstattung", a.orderNumber, a.event),
     });
   }
@@ -52,17 +55,35 @@ export function entriesForMonth(feed, ym, appRefunds = []) {
 
 // CSV (deutsch: ; getrennt, Komma als Dezimal) für die Buchhaltung.
 export function buildAccountantCsv(feed, ym, appRefunds = []) {
-  const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Verwendungszweck", "Urspr. gezahlt (EUR)", "Erstattet/Storniert (EUR)"];
+  const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Zahlungsmethode", "Verwendungszweck", "Urspr. gezahlt (EUR)", "Erstattet/Storniert (EUR)"];
   const entries = entriesForMonth(feed, ym, appRefunds);
   const rows = entries.map((r) => [
     r.art, r.event || "", deDate(r.date), r.customer || "", r.orderNumber || "", r.category || "",
-    r.purpose || "", eur(r.paidCents), eur(r.amountCents),
+    r.paymentMethod || "", r.purpose || "", eur(r.paidCents), eur(r.amountCents),
   ]);
   const sum = entries.reduce((s, r) => s + (r.amountCents || 0), 0);
   rows.push([]);
-  rows.push(["Summe", "", "", "", "", "", "", "", eur(sum)]);
+  rows.push(["Summe", "", "", "", "", "", "", "", "", eur(sum)]);
   // UTF-8-BOM voranstellen, damit Excel ä/ö/ü korrekt anzeigt (sonst „Ã¤").
   return "﻿" + [head, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
+}
+
+// --- Versand-Archiv (ausgeführte Bestellungen) ------------------------------
+export function fulfillmentsForMonth(feed, ym) {
+  return (feed?.fulfillments || [])
+    .filter((f) => String(f.date || "").slice(0, 7) === ym)
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+// CSV der in einem Monat ausgeführten Bestellungen. Keine -> "" (dann nicht versenden).
+export function buildFulfillmentsCsv(feed, ym) {
+  const entries = fulfillmentsForMonth(feed, ym);
+  if (!entries.length) return "";
+  const head = ["Kunde", "Bestellnummer", "Betrag (EUR)", "Zahlungsmethode", "Veranstaltung", "Veranstaltungsdatum", "Versanddatum", "Kategorie"];
+  const rows = entries.map((f) => [
+    f.customer || "", f.orderNumber || "", eur(f.amountCents), f.paymentMethod || "",
+    f.event || "", deDate(f.eventDate), deDate(f.date), f.category || "",
+  ]);
+  return "﻿" + [head, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
 }
 
 // Vormonat als "YYYY-MM" relativ zu einem Stichtag (Standard: heute).

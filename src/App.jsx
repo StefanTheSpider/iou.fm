@@ -8,6 +8,7 @@ import Rechnungspruefung from "./components/Rechnungspruefung.jsx";
 import Rechnungen from "./components/Rechnungen.jsx";
 import Archiv from "./components/Archiv.jsx";
 import Belege from "./components/Belege.jsx";
+import Versand from "./components/Versand.jsx";
 import Setup from "./components/Setup.jsx";
 import Footer from "./components/Footer.jsx";
 import Toaster from "./components/Toaster.jsx";
@@ -16,7 +17,7 @@ import * as Sync from "./lib/sync.js";
 import { checkForUpdate } from "./lib/update.js";
 import { fetchMailInvoices } from "./lib/mailInvoices.js";
 import { toast } from "./lib/toast.js";
-import { getFeed, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege, getBelegFiles, openBelegFile, fetchBelegFileBytes, uploadRechnungBelege, sendRechnungBelege } from "./lib/feed.js";
+import { getFeed, getFulfillments, triggerSync, saveIntegration, getIntegration, shopifyOAuthStart, getAccountant, saveAccountant, sendAccountantNow, pushAppRefunds, sendInvoiceBelege, getInbox, saveInbox, getBelege, getBelegFiles, openBelegFile, fetchBelegFileBytes, uploadRechnungBelege, sendRechnungBelege } from "./lib/feed.js";
 import { invoke } from "@tauri-apps/api/core";
 import { getLicense, startCheckout, openPortal, setSeatPacks, claimOwner, licenseAllowsEbics, getOwnerCustomers } from "./lib/billing.js";
 
@@ -503,6 +504,7 @@ export default function App() {
             <button className={`tab ${tab === "stornos" ? "active" : ""}`} onClick={() => setTab("stornos")}>Stornos</button>
             <button className={`tab ${tab === "archiv" ? "active" : ""}`} onClick={() => setTab("archiv")}>Archiv</button>
             <button className={`tab ${tab === "belege" ? "active" : ""}`} onClick={() => setTab("belege")}>Belege</button>
+            <button className={`tab ${tab === "versand" ? "active" : ""}`} onClick={() => setTab("versand")}>Versand-Archiv</button>
             {isAdmin && <button className={`tab ${tab === "stammdaten" ? "active" : ""}`} onClick={() => setTab("stammdaten")}>Stammdaten</button>}
             {isOwner && <button className={`tab ${tab === "support" ? "active" : ""}`} onClick={() => setTab("support")}>Support</button>}
           </nav>
@@ -581,6 +583,7 @@ export default function App() {
             {tab === "stornos" && <Stornos feed={feed} canPay={isAdmin} onRefresh={refreshFeed} busy={feedBusy} />}
             {tab === "archiv" && <Archiv data={data} canPay={isAdmin} onSendRechnungBelege={demoMode ? null : (batchId) => sendRechnungBelege(sessionRef.current, batchId)} />}
             {tab === "belege" && <Belege data={data} updateData={effUpdateData} inbox={demoMode ? null : inbox} canPay={isAdmin} />}
+            {tab === "versand" && <Versand load={demoMode ? null : () => getFulfillments(sessionRef.current)} />}
             {tab === "stammdaten" && isAdmin && (
               <Stammdaten data={data} updateData={effUpdateData} sync={sync} shopify={shopify} accountant={accountant}
                 billing={billing} license={license} ebicsAllowed={ebicsAllowed} tenantId={session.tenantId} inbox={inbox}

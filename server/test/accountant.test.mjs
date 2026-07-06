@@ -1,4 +1,4 @@
-import { buildAccountantCsv, entriesForMonth, combinedEntries, prevMonthKey, thisMonthKey, isLastDayOfMonth } from "../accountant.mjs";
+import { buildAccountantCsv, buildFulfillmentsCsv, entriesForMonth, combinedEntries, prevMonthKey, thisMonthKey, isLastDayOfMonth } from "../accountant.mjs";
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.error("  ✗ " + m); } };
@@ -29,15 +29,32 @@ ok(may.length === 3, "Mai: 3 Zeilen (1001, 1003, 1005) – nicht 4");
 const csv = buildAccountantCsv(feed, "2026-05");
 ok(csv.charCodeAt(0) === 0xFEFF, "CSV: UTF-8-BOM für korrekte Umlaute in Excel");
 const head = csv.replace(/^﻿/, "").split("\r\n")[0];
-ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR)", "CSV: neue Kopfzeile mit Verwendungszweck + Urspr. gezahlt");
-ok(csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;Erstattung 1005 Lady Gaga;200,00;200,00"), "CSV: 1005 eine Zeile, Verwendungszweck gefüllt, 200,00");
+ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Zahlungsmethode;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR)", "CSV: Kopfzeile mit Zahlungsmethode-Spalte");
+ok(csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;;Erstattung 1005 Lady Gaga;200,00;200,00"), "CSV: 1005 eine Zeile, Verwendungszweck gefüllt, 200,00");
 ok(comb.find((r) => r.orderNumber === "1001").purpose === "Stornierung 1001 BTS München", "Verwendungszweck auch bei reinem Storno gefüllt");
-ok(/Summe;;;;;;;;403,00/.test(csv), "CSV: Summe 129 + 74 + 200 = 403,00 (keine Doppelzählung)");
+ok(/Summe;;;;;;;;;403,00/.test(csv), "CSV: Summe 129 + 74 + 200 = 403,00 (keine Doppelzählung)");
 
 // App-/SEPA-Erstattung mit Verwendungszweck + urspr. Betrag
 const app = [{ orderNumber: "29985", customer: "Melissa", event: "BTS", amountCents: 14990, paidCents: 149900, purpose: "Erstattung 29985 BTS", date: "2026-05-15", category: "" }];
 const csvApp = buildAccountantCsv(feed, "2026-05", app);
-ok(csvApp.includes("Erstattung (App/SEPA);BTS;15.05.2026;Melissa;29985;;Erstattung 29985 BTS;1499,00;149,90"), "CSV: App-Erstattung mit Verwendungszweck + urspr. gezahlt (1499,00) + erstattet (149,90)");
+ok(csvApp.includes("Erstattung (App/SEPA);BTS;15.05.2026;Melissa;29985;;;Erstattung 29985 BTS;1499,00;149,90"), "CSV: App-Erstattung mit Verwendungszweck + urspr. gezahlt (1499,00) + erstattet (149,90)");
+
+// Zahlungsmethode fließt in die CSV.
+const csvPay = buildAccountantCsv({ refunds: [{ date: "2026-05-22T09:00:00Z", event: "E", customer: "C", orderNumber: "2001", category: "X", amountCents: 5000, paidCents: 8000, paymentMethod: "PayPal" }] }, "2026-05");
+ok(csvPay.includes(";PayPal;"), "CSV: Zahlungsmethode (PayPal) in der Zeile");
+
+// Versand-Archiv-CSV: nur Bestellungen des Monats (nach Versanddatum), leer -> ""
+const vfeed = { fulfillments: [
+  { date: "2026-06-05T08:00:00Z", customer: "Anna", orderNumber: "3001", amountCents: 79800, paymentMethod: "PayPal", event: "Metallica Berlin", eventDate: "2026-08-01", category: "Konzerte DE" },
+  { date: "2026-05-30T08:00:00Z", customer: "Ben", orderNumber: "3002", amountCents: 12000, paymentMethod: "Kreditkarte", event: "BTS", eventDate: "2026-07-11", category: "Konzerte DE" },
+] };
+const vcsv = buildFulfillmentsCsv(vfeed, "2026-06");
+ok(vcsv.charCodeAt(0) === 0xFEFF, "Versand-CSV: UTF-8-BOM");
+const vhead = vcsv.replace(/^﻿/, "").split("\r\n")[0];
+ok(vhead === "Kunde;Bestellnummer;Betrag (EUR);Zahlungsmethode;Veranstaltung;Veranstaltungsdatum;Versanddatum;Kategorie", "Versand-CSV: Kopfzeile");
+ok(vcsv.includes("Anna;3001;798,00;PayPal;Metallica Berlin;01.08.2026;05.06.2026;Konzerte DE"), "Versand-CSV: Juni-Zeile korrekt");
+ok(!vcsv.includes("3002"), "Versand-CSV: Mai-Bestellung nicht im Juni");
+ok(buildFulfillmentsCsv({ fulfillments: [] }, "2026-06") === "", "Versand-CSV: leer wenn keine (nicht senden)");
 
 // Monats-Helfer
 ok(prevMonthKey(new Date("2026-01-15")) === "2025-12", "prevMonthKey Jahreswechsel");

@@ -24,8 +24,8 @@ import http from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders, normalizeOrder, fetchOrdersByNames } from "./shopify.mjs";
-import { buildAccountantCsv, thisMonthKey, prevMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
+import { fetchOrdersSince, fetchOpenDisputeOrders, fetchResolvedDisputeOrders, tallyDisputeOutcomes, collectFromOrders, normalizeOrder, fetchOrdersByNames, fetchFulfilledOrders, collectFulfillments } from "./shopify.mjs";
+import { buildAccountantCsv, buildFulfillmentsCsv, thisMonthKey, prevMonthKey, isLastDayOfMonth, sendViaResend, sendAttachmentsViaResend } from "./accountant.mjs";
 import { oauthConfigured, normalizeShop, buildAuthUrl, verifyState, verifyShopifyHmac, exchangeToken } from "./shopify-oauth.mjs";
 import { TRIAL_DAYS, PLANS, planExists, priceIdForPlan, planForPriceId, seatPriceId, licenseView, applyStripeEvent, billingEnforced } from "./billing.mjs";
 import { inboxAddress, newInboxToken, tokenFromAddress, sha256Hex, safeName } from "./inbound.mjs";
@@ -87,17 +87,24 @@ async function sendAccountantFor(t, ym, { auto = false } = {}) {
     return { skipped: true, reason: "no_resend_key" };
   }
   const csv = buildAccountantCsv(t.shopifyFeed || {}, ym, t.appRefunds || []);
+  // Versand-Archiv des Monats (ausgeführte Bestellungen) – nur anhängen, wenn es welche gab.
+  const versandCsv = buildFulfillmentsCsv(t.shopifyFeed || {}, ym);
+  const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
+  const attachments = [{ filename: `Stornos_Erstattungen_${ym}.csv`, content: b64(csv) }];
+  if (versandCsv) attachments.push({ filename: `Versand-Archiv_${ym}.csv`, content: b64(versandCsv) });
   // WICHTIG: über die verifizierte Versand-Domain senden (SEND_DOMAIN, z. B. iou-tech.com).
   // Nicht RESEND_FROM verwenden – das zeigt evtl. noch auf eine alte, nicht mehr in Resend
   // verifizierte Domain (z. B. fork-and-merge.com) und führt zu „domain is not verified" (403).
   if (!t.senderToken) t.senderToken = newInboxToken();
   const fromHeader = tenantFromHeader(t);
   try {
-    await sendViaResend({
+    await sendAttachmentsViaResend({
       apiKey: RESEND_API_KEY, from: fromHeader, to: a.email, cc: a.cc || null,
-      subject: `Stornos & Erstattungen ${ym} – ${t.company || "iou.fm"}`,
-      text: `Anbei die Stornierungen und Rückerstattungen für ${ym}.\n\nAutomatisch erstellt von iou.fm.`,
-      filename: `Stornos_Erstattungen_${ym}.csv`, csv,
+      subject: `Stornos & Erstattungen ${ym}${versandCsv ? " + Versand-Archiv" : ""} – ${t.company || "iou.fm"}`,
+      text: `Anbei die Stornierungen und Rückerstattungen für ${ym}.` +
+        (versandCsv ? `\nZusätzlich das Versand-Archiv (ausgeführte Bestellungen) für ${ym}.` : "") +
+        `\n\nAutomatisch erstellt von iou.fm.`,
+      attachments,
     });
   } catch (e) {
     // Häufigste echte Ursache: Absender-Domain in Resend nicht verifiziert (403).
@@ -267,25 +274,34 @@ async function syncTenant(t, { full = false } = {}) {
   t.shopifyFeed = feed;
   t.integration.lastSyncAt = feed.syncedAt;
 
-  // Voll-Resync: „Urspr. gezahlt" (paidCents) auch auf App/SEPA-Erstattungen nachtragen –
-  // aus dem Shopify-Bestell-Gesamtbetrag. So stimmt der Buchhalter-Report auch bei
-  // Teilerstattungen per SEPA (paidCents = ursprünglich gezahlt, nicht der Erstattungsbetrag).
+  // Versand-Archiv: ausgeführte (fulfilled) Bestellungen sammeln – Kunde, Bestellnr., Betrag,
+  // Veranstaltung, Veranstaltungsdatum. Wird gemischt (angehängt), gedeckelt.
+  try {
+    const fulNodes = await fetchFulfilledOrders(intg.shopify.domain, token, since);
+    const fuls = collectFulfillments(fulNodes, { tagCfg: intg.tags || {} });
+    feed.fulfillments = mergeById(feed.fulfillments || [], fuls, (x) => x.orderNumber).slice(-10000);
+  } catch (e) { console.warn("[sync] Versand-Archiv-Sync fehlgeschlagen:", e.message); }
+
+  // Voll-Resync: „Urspr. gezahlt" (paidCents) UND Zahlungsmethode auch auf App/SEPA-Erstattungen
+  // nachtragen – aus der Shopify-Bestellung (Gesamtbetrag + Gateway). So stimmen Buchhalter-CSV
+  // (Teilerstattungen: paidCents = ursprünglich gezahlt) und die Zahlungsmethode-Spalte.
   if (full && Array.isArray(t.appRefunds) && t.appRefunds.length) {
-    const totals = {};
-    const addNode = (node) => { const o = normalizeOrder(node); const n = String(o.orderNumber || "").replace(/^#/, ""); if (n) totals[n] = o.totalCents; };
+    const info = {};
+    const addNode = (node) => { const o = normalizeOrder(node); const n = String(o.orderNumber || "").replace(/^#/, ""); if (n) info[n] = { totalCents: o.totalCents, paymentMethod: o.paymentMethod }; };
     for (const node of nodes) addNode(node);
-    // App/SEPA-Bestellungen, die nicht im Fenster lagen, gezielt per Nummer nachladen.
-    const need = t.appRefunds.map((a) => String(a.orderNumber || "").replace(/^#/, "")).filter((n) => n && totals[n] == null);
+    const need = t.appRefunds.map((a) => String(a.orderNumber || "").replace(/^#/, "")).filter((n) => n && !info[n]);
     if (need.length) {
       try { for (const node of await fetchOrdersByNames(intg.shopify.domain, token, need)) addNode(node); }
       catch (e) { console.warn("[sync] App/SEPA-Bestellungen nachladen fehlgeschlagen:", e.message); }
     }
     let patched = 0;
     for (const a of t.appRefunds) {
-      const n = String(a.orderNumber || "").replace(/^#/, "");
-      if (totals[n] != null && a.paidCents !== totals[n]) { a.paidCents = totals[n]; patched++; }
+      const o = info[String(a.orderNumber || "").replace(/^#/, "")];
+      if (!o) continue;
+      if (o.totalCents != null && a.paidCents !== o.totalCents) { a.paidCents = o.totalCents; patched++; }
+      if (o.paymentMethod && a.paymentMethod !== o.paymentMethod) { a.paymentMethod = o.paymentMethod; patched++; }
     }
-    if (patched) console.log(`[sync] appRefunds paidCents korrigiert: ${patched} Eintrag/e fuer tenant=${t.tenantId}`);
+    if (patched) console.log(`[sync] appRefunds korrigiert (paidCents/Zahlungsmethode): ${patched} Feld(er) fuer tenant=${t.tenantId}`);
   }
 
   await writeTenant(t);
@@ -309,12 +325,12 @@ async function backfillPaidCents() {
   try { files = (await fs.readdir(TENANT_DIR)).filter((f) => f.endsWith(".json")); } catch { return; }
   for (const f of files) {
     const t = await readJson(path.join(TENANT_DIR, f));
-    if (!t || t.paidCentsFixedV2) continue;          // einmalig pro Mandant (V2: autoritativer Ersatz)
+    if (!t || t.paidCentsFixedV3) continue;          // einmalig pro Mandant (V3: + Zahlungsmethode + Versand-Archiv)
     if (!t?.integration?.shopify?.token) continue;   // ohne Shopify nichts nachzutragen
-    console.log(`[sync] paidCents-Backfill (V2): Voll-Resync fuer tenant=${t.tenantId}`);
+    console.log(`[sync] Backfill (V3): Voll-Resync fuer tenant=${t.tenantId}`);
     try {
-      await syncTenant(t, { full: true });           // repariert feed.refunds UND appRefunds, schreibt t
-      t.paidCentsFixedV2 = true;
+      await syncTenant(t, { full: true });           // repariert feed.refunds/cancellations + appRefunds + Versand-Archiv
+      t.paidCentsFixedV3 = true;
       await writeTenant(t);
     } catch (e) { console.warn("[sync] Backfill fehlgeschlagen", t.tenantId, e.message); }
   }
@@ -1163,7 +1179,18 @@ const server = http.createServer(async (req, res) => {
       if (!t) return send(res, 404, { error: "not_found" });
       if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
       const fd = t.shopifyFeed || { cancellations: [], refunds: [], requests: [], syncedAt: null };
-      return send(res, 200, { ...fd, appRefunds: t.appRefunds || [] });
+      const { fulfillments, ...rest } = fd;   // Versand-Archiv separat (kann groß werden) – eigener Endpunkt
+      return send(res, 200, { ...rest, appRefunds: t.appRefunds || [] });
+    }
+
+    // GET /api/tenants/:id/fulfillments – Versand-Archiv (ausgeführte Bestellungen), lazy geladen.
+    if (parts[0] === "api" && parts[1] === "tenants" && parts[3] === "fulfillments" && req.method === "GET") {
+      const id = parts[2];
+      if (!validId(id)) return send(res, 404, { error: "not_found" });
+      const t = await readTenant(id);
+      if (!t) return send(res, 404, { error: "not_found" });
+      if (!tenantKeyOk(bearer(req), t)) return send(res, 401, { error: "unauthorized" });
+      return send(res, 200, { fulfillments: t.shopifyFeed?.fulfillments || [], syncedAt: t.shopifyFeed?.syncedAt || null });
     }
 
     // POST /api/tenants/:id/sync  – Abgleich jetzt auslösen (Test/manuell)

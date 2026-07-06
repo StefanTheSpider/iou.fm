@@ -113,7 +113,11 @@ Die SHA-256-Prüfsumme wird mit angezeigt.
 
 ## 8 · Export für den Steuerberater
 
-Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als DATEV-Buchungsstapel oder CSV (Umlaut-sicher). Optional: automatischer Monatsversand der Stornos-/Erstattungs-CSV per E-Mail (Stammdaten).
+Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als DATEV-Buchungsstapel oder CSV (Umlaut-sicher). Optional: automatischer Monatsversand der Stornos-/Erstattungs-CSV per E-Mail (Stammdaten). Diese CSV enthält zu jedem Vorgang auch die **Zahlungsmethode**, mit der der Kunde ursprünglich bezahlt hat (z. B. PayPal, Kreditkarte, Klarna).
+
+Der automatische Versand läuft **immer am Monatsende um 23:59** – unabhängig davon, ob die App gerade offen ist. Lag im Monat mindestens eine ausgeführte Bestellung vor, hängt die Mail zusätzlich das **Versand-Archiv** des Monats als zweite CSV an. Einen einzelnen Monat kannst du in den Stammdaten (Belege & Buchhaltung → Monat wählen → „Monat jetzt senden") auch manuell nachschicken.
+
+**Eigener Reiter „Versand-Archiv":** Oben in der Navigation findest du den Reiter **Versand-Archiv**. Dort stehen alle in Shopify **ausgeführten (versendeten)** Bestellungen – je mit **Kunde, Bestellnummer, Betrag, Zahlungsmethode, Veranstaltung und Veranstaltungsdatum**. Er füllt sich automatisch beim Abgleich. Über **„Als CSV exportieren"** lädst du die Liste (Umlaut-sicher) in „Downloads"; mit dem Suchfeld filterst du nach Bestellnummer, Kunde oder Veranstaltung.
 
 ## 9 · Direkt an die Bank senden (EBICS, Bank-Tarif)
 

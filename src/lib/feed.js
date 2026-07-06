@@ -126,6 +126,13 @@ export async function getFeed(session) {
   return r.ok ? r.json() : null;
 }
 
+// Versand-Archiv (ausgeführte Bestellungen) – separat/lazy, da potenziell groß.
+export async function getFulfillments(session) {
+  if (!session?.tenantId) return { fulfillments: [] };
+  const r = await fetch(api(`/api/tenants/${session.tenantId}/fulfillments`), { headers: auth(session) });
+  return r.ok ? r.json() : { fulfillments: [] };
+}
+
 // Abgleich jetzt anstoßen (Test/manuell).
 export async function triggerSync(session) {
   const r = await fetch(api(`/api/tenants/${session.tenantId}/sync`), { method: "POST", headers: auth(session) });
