@@ -282,26 +282,23 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
     }
   }
 
-  // Geprüfte Rechnungs-PDFs an Steuerberater mailen (optional, nach Zahlung).
+  // Geprüfte Rechnungs-PDFs an Steuerberater mailen – rein OPTIONAL, als Bonus nach der Zahlung.
+  // Wer selbst an DATEV/Steuerberater sendet, lässt „Auto-Versand" aus: dann passiert hier
+  // GAR NICHTS und es erscheint keine Meldung (kein Nörgeln um einen Empfänger).
   async function sendBelege(eligibleRows) {
-    // Empfänger (Steuerberater) sind zentral unter „Belege & Buchhaltung" gepflegt –
-    // der Hub adressiert die Belege automatisch dorthin.
     if (!onSendBelege) return;
-    if (!opts.autoSendBelege) {
-      setBelegMsg("Hinweis: Auto-Versand an Steuerberater ist aus (Stammdaten → Belege & Buchhaltung). Du kannst die Belege oben manuell senden.");
-      return;
-    }
+    if (!opts.autoSendBelege) return;              // Auto-Versand aus → still, keine Meldung
     const files = eligibleRows.map((r) => pdfStore.current.get(r.id)).filter(Boolean);
-    if (!files.length) { setBelegMsg("Hinweis: Keine PDF-Belege im Speicher – nur frisch geladene PDFs werden mitgeschickt."); return; }
+    if (!files.length) return;                     // nichts frisch Geladenes → still
     setBelegMsg("Sende Belege …");
     try {
       const res = await onSendBelege({ files });
       setBelegMsg(`✓ ${res.sent || files.length} Beleg(e) an Steuerberater gesendet.`);
     } catch (e) {
       const m = e.message || "";
-      const msg = /Empfänger/i.test(m)
-        ? "Kein Empfänger hinterlegt – trage Steuerberater unter Stammdaten → Belege & Buchhaltung ein."
-        : "Beleg-Versand fehlgeschlagen: " + m;
+      // Auto-Versand ist ein Bonus: fehlt der Empfänger, NICHT nörgeln (viele senden selbst an DATEV).
+      if (/Empfänger|recipient|no_recipient/i.test(m)) { setBelegMsg(""); return; }
+      const msg = "Beleg-Versand fehlgeschlagen: " + m;
       setBelegMsg(msg); toastError(msg);
     }
   }

@@ -187,13 +187,15 @@
 
   <h2 id="bank">9 · Direkt aus der App an die Bank senden (EBICS)</h2>
   <p class="note">Im <strong>Bank</strong>-Tarif enthalten. Spart den manuellen Datei-Upload.</p>
+  <p>EBICS ist der offizielle, sichere Draht zu deiner Bank. Die Einrichtung ist etwas behördlich, passiert aber <strong>nur ein einziges Mal</strong>. Im EBICS-Bereich zeigen dir eine <strong>Fortschrittsleiste</strong> und ein Kasten <strong>„Dein nächster Schritt"</strong> jederzeit, wo du gerade stehst – du kannst dich also nicht verlaufen. So gehst du vor (Stammdaten → <strong>Bankanbindung (EBICS)</strong> aktivieren):</p>
   <ol>
-    <li>Stammdaten → <strong>Bankanbindung (EBICS)</strong> aktivieren.</li>
-    <li>Zugangsdaten der Bank eintragen (Host-ID, Kunden-ID, Teilnehmer-ID, URL – die bekommst du aus deinem EBICS-Vertrag).</li>
-    <li><strong>Schlüssel erzeugen</strong> (passiert lokal auf deinem Gerät).</li>
-    <li><strong>INI-Brief drucken</strong>, unterschreiben und an die Bank schicken – erst danach schaltet die Bank dich frei.</li>
-    <li>Nach der Freischaltung „aktiv" setzen. Ab dann erscheint im Lohn-/Erstattungslauf der Button <strong>„Per EBICS an Bank senden"</strong>; die Freigabe machst du bequem über die TAN-/Banking-App deiner Bank (z. B. photoTAN, pushTAN, SecureGo).</li>
+    <li><strong>Zugangsdaten eintragen</strong> – Host-ID, Kunden-ID (Partner-ID), Teilnehmer-ID (User-ID) und die EBICS-URL. Diese Werte stehen in deinem EBICS-Vertrag bzw. im Bankparameter-Brief deiner Bank.</li>
+    <li><strong>Schlüssel erzeugen</strong> – dein digitaler Ausweis, bleibt verschlüsselt auf deinem Gerät. Danach gleich <strong>mit einem Passwort sichern</strong>: So musst du bei einem Gerätewechsel nie neu bei der Bank initialisieren.</li>
+    <li><strong>Elektronisch einreichen</strong> – Button <strong>„INI + HIA an die Bank senden"</strong>. Meldet nur die öffentlichen Teile deiner Schlüssel an; bewegt kein Geld.</li>
+    <li><strong>INI-Brief drucken</strong>, unterschreiben und an die Bank schicken (Adresse/Fax/E-Mail stehen in deinen Bank-Unterlagen). <strong>Wichtig: innerhalb von ca. 10 Tagen nach dem Einreichen aus Schritt 3</strong> – am schnellsten per E-Mail/Fax. Die Bank gleicht Brief und Schlüssel ab und schaltet frei (dauert meist einige Werktage).</li>
+    <li>Nach der Freischaltung <strong>„aktiv"</strong> setzen. Ab dann erscheint im Lohn-/Erstattungslauf der Button <strong>„Per EBICS senden"</strong>; die Freigabe machst du bequem über die TAN-/Banking-App deiner Bank (z. B. photoTAN, pushTAN, SecureGo).</li>
   </ol>
+  <p class="note">Gut zu wissen: Ohne Erst-Initialisierung binnen <strong>60 Tagen</strong> sperrt die Bank den Zugang; nach <strong>180 Tagen</strong> ohne Nutzung wird er deaktiviert. Verpasst du die 10-Tage-Frist für den INI-Brief, ist das nicht schlimm – du initialisierst dann einfach neu (Schritt 2–4). Bei Unsicherheit hilft der Firmenkunden-Support deiner Bank.</p>
 
   <h2 id="import">10 · SEPA-Datei ins Online-Banking laden</h2>
   <p>Wenn du <em>nicht</em> per EBICS sendest, lädst du die erzeugte Datei einmal hoch:</p>

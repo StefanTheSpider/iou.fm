@@ -86,6 +86,13 @@ async function sendAccountantFor(t, ym, { auto = false } = {}) {
     console.warn(`[buchhalter] SKIP tenant=${t.tenantId} monat=${ym} grund=no_resend_key (RESEND_API_KEY fehlt in den Railway-Variablen!)`);
     return { skipped: true, reason: "no_resend_key" };
   }
+  // Vor dem Bau der CSV die Shopify-Daten des Monats AUTORITATIV auffrischen: der Versand liest
+  // sonst nur den gespeicherten Feed, in dem Alt-Einträge (z. B. Stornos ohne Zahlungsmethode)
+  // stehen bleiben. So ist die CSV immer aktuell – unabhängig vom einmaligen Startup-Backfill.
+  if (t.integration?.shopify?.token && t.integration?.shopify?.domain) {
+    try { await syncTenant(t, { full: true, sinceOverride: `${ym}-01T00:00:00Z` }); }
+    catch (e) { console.warn(`[buchhalter] Auffrischen vor Versand fehlgeschlagen tenant=${t.tenantId} monat=${ym}: ${e.message}`); }
+  }
   const csv = buildAccountantCsv(t.shopifyFeed || {}, ym, t.appRefunds || []);
   // Versand-Archiv des Monats (ausgeführte Bestellungen) – nur anhängen, wenn es welche gab.
   const versandCsv = buildFulfillmentsCsv(t.shopifyFeed || {}, ym);

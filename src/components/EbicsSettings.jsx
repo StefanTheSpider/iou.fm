@@ -13,6 +13,30 @@ function downloadText(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// Fortschritts-Anzeige der 5 Einrichtungs-Etappen. Macht den mehrstufigen (Behörden-artigen)
+// Prozess auf einen Blick überschaubar: erledigt ✓, aktueller Schritt hervorgehoben.
+const STEP_LABELS = ["Zugang", "Schlüssel", "Einreichen", "INI-Brief", "Aktiv"];
+function Stepper({ current }) {
+  return (
+    <div style={{ display: "flex", gap: 4, margin: "2px 0 14px", flexWrap: "wrap" }}>
+      {STEP_LABELS.map((label, i) => {
+        const done = i < current, cur = i === current;
+        return (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 0", minWidth: 92 }}>
+            <span style={{
+              width: 22, height: 22, borderRadius: "50%", display: "inline-flex", alignItems: "center",
+              justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0,
+              background: done ? "var(--ok,#3ddc97)" : cur ? "#c9a24b" : "rgba(255,255,255,.08)",
+              color: done || cur ? "#12151b" : "var(--muted,#8a929d)",
+            }}>{done ? "✓" : i + 1}</span>
+            <span style={{ fontSize: 11.5, fontWeight: cur ? 700 : 400, color: cur ? "var(--text,inherit)" : "var(--muted,#8a929d)" }}>{label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Geführter EBICS-Einrichtungs-Assistent (Einstellungen → Bankanbindung).
 // Opt-in: Tix & Travel (oder jeder Käufer) entscheidet hier aktiv, ob die direkte
 // Bankanbindung genutzt wird, und meldet sich mit seinen EBICS-Zugangsdaten an.
@@ -114,6 +138,21 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
 
   const configReady = ebicsConfigValid(cfg);
 
+  // Aktuelle Etappe (0–4) für Stepper + „nächster Schritt"-Banner aus Status ableiten.
+  const currentStep =
+    !configReady ? 0 :
+    !keys ? 1 :
+    status === EBICS_STATUS.KEYS_GENERATED ? 2 :
+    status === EBICS_STATUS.INI_SENT ? 3 :
+    status === EBICS_STATUS.ACTIVE ? 4 : 1;
+  const NEXT_STEP = [
+    "Trage unten die Zugangsdaten deiner Bank ein (Host-ID, Kunden-ID, Teilnehmer-ID, URL – aus deinem EBICS-Vertrag).",
+    "Erzeuge deine EBICS-Schlüssel (Schritt 2). Sichere sie danach gleich mit einem Passwort – so musst du nie neu bei der Bank initialisieren.",
+    "Sende INI + HIA elektronisch an die Bank (Schritt 3a). Das bewegt kein Geld – es meldet nur deine Schlüssel an.",
+    "Drucke den INI-Brief, unterschreibe ihn und schicke ihn innerhalb von ca. 10 Tagen an deine Bank (Schritt 3b). Danach prüft die Bank und schaltet frei – das dauert meist einige Werktage.",
+    "Alles erledigt: die Bankanbindung ist aktiv. Im Lohn- und Erstattungslauf erscheint jetzt der Button »Per EBICS senden«.",
+  ];
+
   return (
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Bankanbindung (EBICS) <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· optional</span></h2>
@@ -134,12 +173,34 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
 
       {enabled && (
         <div style={{ marginTop: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <span className="note" style={{ margin: 0 }}>Status:</span>
             <strong style={{ color: status === EBICS_STATUS.ACTIVE ? "var(--ok, #3ddc97)" : "var(--text, inherit)" }}>
               {ebicsStatusLabel(cfg)}
             </strong>
           </div>
+
+          {/* Fortschritt + genau EIN nächster Schritt – damit man im mehrstufigen Ablauf nicht die Orientierung verliert. */}
+          <Stepper current={currentStep} />
+          <div style={{ background: "rgba(201,162,75,.12)", border: "1px solid rgba(201,162,75,.4)", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: .4, color: "#e7c982" }}>👉 DEIN NÄCHSTER SCHRITT</div>
+            <div style={{ marginTop: 4, fontSize: 14, lineHeight: 1.45 }}>{NEXT_STEP[currentStep]}</div>
+          </div>
+
+          <details style={{ marginBottom: 14 }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--muted)" }}>Wie läuft die Einrichtung ab? (einmalig, kurz erklärt)</summary>
+            <p className="note" style={{ marginTop: 8 }}>
+              EBICS ist der offizielle, sichere Draht zu deiner Bank. Einmal eingerichtet, gehen SEPA-Aufträge direkt aus iou.fm an die Bank –
+              freigegeben über deine Banking-App. Die Einrichtung ist etwas behördlich, passiert aber <strong>nur ein einziges Mal</strong>:
+            </p>
+            <ol className="note" style={{ marginTop: 4, paddingLeft: 18, lineHeight: 1.6 }}>
+              <li><strong>Zugangsdaten</strong> aus deinem EBICS-Vertrag eintragen (Schritt 1).</li>
+              <li><strong>Schlüssel erzeugen</strong> – dein digitaler Ausweis, bleibt sicher auf diesem Gerät (Schritt 2).</li>
+              <li><strong>Elektronisch einreichen</strong> (INI + HIA) – schickt nur die öffentlichen Teile deiner Schlüssel, kein Geld (Schritt 3a).</li>
+              <li><strong>INI-Brief</strong> drucken, unterschreiben und an die Bank schicken – <strong>innerhalb von ca. 10 Tagen</strong> nach dem Einreichen. Damit bestätigst du der Bank, dass die Schlüssel wirklich von dir sind (Schritt 3b).</li>
+              <li>Bank prüft und <strong>schaltet frei</strong> – danach hier auf „aktiv" setzen. Ab dann kannst du direkt senden (Schritt 4).</li>
+            </ol>
+          </details>
 
           <h3 style={{ margin: "8px 0 4px", fontSize: 14 }}>1 · Zugangsdaten der Bank</h3>
           <p className="note" style={{ marginTop: 0 }}>Diese Werte bekommst du von deiner Bank (EBICS-Vertrag). Sie sind nicht geheim.</p>
@@ -201,8 +262,13 @@ export default function EbicsSettings({ data, updateData, allowed = true }) {
             {busy === "init" ? "Sende INI/HIA…" : "INI + HIA an die Bank senden"}
           </button>
           <p className="note" style={{ marginTop: 12 }}>
-            <strong>3b)</strong> Druckt den INI-Brief mit den öffentlichen Schlüssel-Hashes. Unterschreiben und per Post/Upload an die
-            Bank schicken – die Bank gleicht Brief und elektronische Schlüssel ab und schaltet <strong>genau diese</strong> Schlüssel frei.
+            <strong>3b)</strong> Drucke den INI-Brief mit den öffentlichen Schlüssel-Hashes, unterschreibe ihn und schicke ihn an deine Bank
+            (Adresse/Fax/E-Mail stehen in deinen Bank-Unterlagen zum EBICS-Zugang). Die Bank gleicht Brief und elektronische Schlüssel ab und
+            schaltet <strong>genau diese</strong> Schlüssel frei.
+          </p>
+          <p className="note" style={{ marginTop: 6, color: "#e7c982" }}>
+            ⏱ <strong>Wichtig:</strong> Der unterschriebene INI-Brief muss <strong>innerhalb von ca. 10 Tagen nach dem elektronischen Einreichen (3a)</strong> bei der Bank sein.
+            Am schnellsten per E-Mail/Fax. Tipp: 3a und 3b direkt nacheinander erledigen.
           </p>
           <button className="btn ghost" disabled={!keys} onClick={printIni}>INI-Brief öffnen / drucken</button>
 

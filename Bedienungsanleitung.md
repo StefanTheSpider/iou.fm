@@ -121,11 +121,17 @@ Der automatische Versand läuft **immer am Monatsende um 23:59** – unabhängig
 
 ## 9 · Direkt an die Bank senden (EBICS, Bank-Tarif)
 
-1. Stammdaten → **Bankanbindung (EBICS)** aktivieren.
-2. Zugangsdaten der Bank eintragen (aus dem EBICS-Vertrag).
-3. **Schlüssel erzeugen** (lokal).
-4. **INI-Brief drucken**, unterschreiben, an die Bank senden – danach schaltet die Bank dich frei.
-5. „aktiv" setzen → Button **„Per EBICS an Bank senden"**; Freigabe über die TAN-/Banking-App deiner Bank (z. B. photoTAN, pushTAN, SecureGo).
+EBICS ist der offizielle, sichere Draht zu deiner Bank. Einmal eingerichtet, gehen SEPA-Aufträge direkt aus iou.fm an die Bank. Die Einrichtung ist etwas behördlich, passiert aber **nur ein einziges Mal**. Oben im EBICS-Bereich zeigen dir eine Fortschrittsleiste und ein Kasten **„Dein nächster Schritt"** jederzeit, wo du gerade stehst.
+
+So gehst du vor (Stammdaten → **Bankanbindung (EBICS)** aktivieren):
+
+1. **Zugangsdaten eintragen** – Host-ID, Kunden-ID (Partner-ID), Teilnehmer-ID (User-ID) und die EBICS-URL. Diese Werte stehen in deinem EBICS-Vertrag bzw. im Bankparameter-Brief deiner Bank.
+2. **Schlüssel erzeugen** – dein digitaler Ausweis, bleibt verschlüsselt auf diesem Gerät. Danach direkt **mit einem Passwort sichern** („Schlüssel sichern"): So musst du bei Gerätewechsel nie neu bei der Bank initialisieren.
+3. **Elektronisch einreichen** – Button **„INI + HIA an die Bank senden"**. Das meldet nur die öffentlichen Teile deiner Schlüssel an; es bewegt kein Geld.
+4. **INI-Brief drucken**, unterschreiben und an die Bank schicken (Adresse/Fax/E-Mail stehen in deinen Bank-Unterlagen). **Wichtig: innerhalb von ca. 10 Tagen nach dem Einreichen aus Schritt 3** – am schnellsten per E-Mail/Fax. Die Bank gleicht Brief und Schlüssel ab und schaltet frei (dauert meist einige Werktage).
+5. **Freischaltung bestätigen** – sobald die Bank aktiviert hat, hier auf **„aktiv"** setzen. Ab dann erscheint im Lohn- und Erstattungslauf der Button **„Per EBICS senden"**; die Freigabe machst du über die TAN-/Banking-App deiner Bank (z. B. photoTAN, pushTAN, SecureGo).
+
+Gut zu wissen: Die Bank sperrt den Zugang, wenn du nicht **innerhalb von 60 Tagen** erstmalig initialisierst; nach **180 Tagen ohne Nutzung** wird er deaktiviert. Verpasst du die 10-Tage-Frist für den INI-Brief, ist das nicht schlimm – dann initialisierst du einfach neu (Schritt 2–4). Bei Unsicherheit hilft der Firmenkunden-Support deiner Bank weiter.
 
 ## 10 · SEPA-Datei ins Online-Banking laden
 
