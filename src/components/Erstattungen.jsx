@@ -189,6 +189,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     const payments = eligible.map(({ r, refund }) => ({
       name: r.customerName, iban: cleanIban(r.iban), bic: r.bic, amountCents: refund.refundCents,
       purpose: r.purpose || `Erstattung ${r.orderNumber}`, endToEndId: r.orderNumber || "NOTPROVIDED",
+      note: r.note || "", refundMode: r.mode || "", feePct: r.mode === "fee" ? r.feePct : "",
     }));
     const xml = buildSepaXml({
       debtor: { name: account.name, iban: account.iban, bic: account.bic },
@@ -204,7 +205,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     const batch = {
       id: batchId, kind: isErstattung ? "erstattung" : "sammel", createdAt: gen, execDate,
       accountLabel: account.label, count: payments.length, sumCents: sumEligible, filename, xml,
-      payments: payments.map((p) => ({ name: p.name, iban: p.iban, amountCents: p.amountCents, purpose: p.purpose })),
+      payments: payments.map((p) => ({ name: p.name, iban: p.iban, amountCents: p.amountCents, purpose: p.purpose, note: p.note, refundMode: p.refundMode, feePct: p.feePct })),
     };
     // Aktion: sofort speichern – „erledigt"-Status & Datei-Archiv dürfen nicht verloren gehen.
     updateData((dd) => ({

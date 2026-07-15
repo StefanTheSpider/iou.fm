@@ -14,6 +14,15 @@ const KIND_COLOR = {
 };
 const kindColor = (k) => KIND_COLOR[k] || { bd: "var(--border-strong)", bg: "var(--raised-2)", fg: "var(--muted)" };
 
+// Erstattungsart je Position lesbar machen: Voll (100 %) / Teil (mit Stornogebühr) / Fester Betrag.
+const refundModeLabel = (p) => {
+  if (!p || !p.refundMode) return "";
+  if (p.refundMode === "full") return "Voll (100 %)";
+  if (p.refundMode === "fee") return `Teil${p.feePct ? ` (${p.feePct} % Gebühr)` : " (Stornogebühr)"}`;
+  if (p.refundMode === "fixed") return "Fester Betrag";
+  return "";
+};
+
 // Historie aller erzeugten SEPA-Dateien (Löhne, Erstattungen, Sammelüberweisung)
 // mit Filtern + Export für die Buchhaltung (DATEV / CSV). Mitarbeiter sehen nur,
 // was wann überwiesen wurde; Export & erneuter Download sind Admin-Aktionen.
@@ -50,7 +59,7 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
       (!from || (b.execDate || "") >= from) &&
       (!to || (b.execDate || "") <= to) &&
       (fAccount === "alle" || b.accountLabel === fAccount) &&
-      (!q || `${b.filename} ${b.accountLabel} ${(b.payments || []).map((p) => p.name).join(" ")}`.toLowerCase().includes(q.toLowerCase())))
+      (!q || `${b.filename} ${b.accountLabel} ${(b.payments || []).map((p) => `${p.name} ${p.invoiceNumber || ""} ${p.purpose || ""}`).join(" ")}`.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => (b.execDate || "").localeCompare(a.execDate || "")), [batches, fType, from, to, fAccount, q]);
 
   const sumCents = filtered.reduce((s, b) => s + (b.sumCents || 0), 0);
@@ -84,7 +93,7 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
               {accountList.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </label>
-          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Suche (Empfänger, Datei…)" style={{ maxWidth: 220 }} />
+          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Suche (Empfänger, Bestellnr., Verwendungszweck, Datei…)" style={{ maxWidth: 280 }} />
         </div>
       </div>
 
@@ -125,14 +134,25 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
                     {canPay && b.kind === "rechnung" && onSendRechnungBelege && <button className="btn ghost small" style={{ marginLeft: 6 }} disabled={sendBusy === b.id} onClick={(e) => { e.stopPropagation(); resendBelege(b); }}>{sendBusy === b.id ? "Sende…" : "An Steuerberater senden"}</button>}
                   </td>
                 </tr>
-                {openId === b.id && (b.payments || []).map((p, i) => (
-                  <tr key={b.id + "-" + i} style={{ background: "var(--bg)" }}>
-                    <td style={{ borderLeft: `4px solid ${c.bd}` }}></td><td colSpan={3} className="muted">{p.name}</td>
-                    <td colSpan={2} className="muted mono">{p.iban}</td>
-                    <td className="amount">{formatEur(p.amountCents)}</td>
-                    <td colSpan={2} className="muted">{p.purpose}</td>
-                  </tr>
-                ))}
+                {openId === b.id && (b.payments || []).map((p, i) => {
+                  const ml = refundModeLabel(p);
+                  return (
+                  <Fragment key={b.id + "-" + i}>
+                    <tr style={{ background: "var(--bg)" }}>
+                      <td style={{ borderLeft: `4px solid ${c.bd}` }}></td><td colSpan={3} className="muted">{p.name}</td>
+                      <td colSpan={2} className="muted mono">{p.iban}</td>
+                      <td className="amount">{formatEur(p.amountCents)}</td>
+                      <td colSpan={2} className="muted">{p.purpose}{ml && <span className="pill" style={{ marginLeft: 8 }}>{ml}</span>}</td>
+                    </tr>
+                    {p.note && (
+                      <tr style={{ background: "var(--bg)" }}>
+                        <td style={{ borderLeft: `4px solid ${c.bd}` }}></td>
+                        <td colSpan={8} className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>💬 Interner Kommentar: {p.note}</td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+                })}
               </Fragment>
             );
             })}

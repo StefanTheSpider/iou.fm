@@ -330,7 +330,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
       batches: [{
         id: batchId, kind: "rechnung", createdAt: today(), execDate,
         accountLabel: account.label, count: payments.length, sumCents: sumEligible, filename, xml,
-        payments: payments.map((p) => ({ name: p.name, iban: p.iban, amountCents: p.amountCents, purpose: p.purpose, invoiceNumber: p.invoiceNumber })),
+        payments: payments.map((p) => ({ name: p.name, iban: p.iban, amountCents: p.amountCents, purpose: p.purpose, invoiceNumber: p.invoiceNumber, note: p.note })),
       }, ...(dd.batches || [])],
     }), true);
     setShowModal(false); setError(""); setBelegMsg("");
