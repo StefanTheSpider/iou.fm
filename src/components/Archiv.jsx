@@ -23,6 +23,26 @@ const refundModeLabel = (p) => {
   return "";
 };
 
+// Treffer im Text gelb markieren (alle Vorkommen), damit man die gesuchte Bestellnummer
+// nicht mehr suchen muss. Gibt einen String (kein Treffer) oder ein Array aus Text + <mark> zurück.
+function highlight(text, q) {
+  const s = String(text ?? "");
+  const needle = String(q || "").trim().toLowerCase();
+  if (!needle) return s;
+  const low = s.toLowerCase();
+  if (!low.includes(needle)) return s;
+  const out = [];
+  let i = 0, k = 0;
+  while (true) {
+    const j = low.indexOf(needle, i);
+    if (j === -1) { out.push(s.slice(i)); break; }
+    if (j > i) out.push(s.slice(i, j));
+    out.push(<mark key={k++} style={{ background: "#e7b15a", color: "#1a1d23", borderRadius: 3, padding: "0 2px", fontWeight: 700 }}>{s.slice(j, j + needle.length)}</mark>);
+    i = j + needle.length;
+  }
+  return out;
+}
+
 // Historie aller erzeugten SEPA-Dateien (Löhne, Erstattungen, Sammelüberweisung)
 // mit Filtern + Export für die Buchhaltung (DATEV / CSV). Mitarbeiter sehen nur,
 // was wann überwiesen wurde; Export & erneuter Download sind Admin-Aktionen.
@@ -120,29 +140,34 @@ export default function Archiv({ data, canPay = false, onSendRechnungBelege = nu
           <tbody>
             {filtered.map((b) => {
               const c = kindColor(b.kind);
+              const ql = q.trim().toLowerCase();
+              // Bei aktiver Suche automatisch aufklappen – der Treffer soll sofort sichtbar sein.
+              const isOpen = openId === b.id || !!ql;
+              const isHit = (p) => !!ql && `${p.name} ${p.iban} ${p.invoiceNumber || ""} ${p.purpose || ""}`.toLowerCase().includes(ql);
               return (
               <Fragment key={b.id}>
                 <tr style={{ cursor: "pointer" }} onClick={() => setOpenId(openId === b.id ? null : b.id)}>
-                  <td style={{ width: 24, borderLeft: `4px solid ${c.bd}` }}>{openId === b.id ? "▾" : "▸"}</td>
+                  <td style={{ width: 24, borderLeft: `4px solid ${c.bd}` }}>{isOpen ? "▾" : "▸"}</td>
                   <td>{deDate(b.execDate)}</td><td className="muted">{deDate(b.createdAt)}</td>
                   <td><span className="pill" style={{ background: c.bg, color: c.fg }}>{kindLabel(b.kind)}</span></td>
                   <td>{b.accountLabel}</td><td>{b.count}</td>
                   <td className="amount">{formatEur(b.sumCents)}</td>
-                  <td className="muted">{b.filename}</td>
+                  <td className="muted">{highlight(b.filename, ql)}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {canPay && b.xml && <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); reDownload(b); }}>erneut laden</button>}
                     {canPay && b.kind === "rechnung" && onSendRechnungBelege && <button className="btn ghost small" style={{ marginLeft: 6 }} disabled={sendBusy === b.id} onClick={(e) => { e.stopPropagation(); resendBelege(b); }}>{sendBusy === b.id ? "Sende…" : "An Steuerberater senden"}</button>}
                   </td>
                 </tr>
-                {openId === b.id && (b.payments || []).map((p, i) => {
+                {isOpen && (b.payments || []).map((p, i) => {
                   const ml = refundModeLabel(p);
+                  const hit = isHit(p);
                   return (
                   <Fragment key={b.id + "-" + i}>
-                    <tr style={{ background: "var(--bg)" }}>
-                      <td style={{ borderLeft: `4px solid ${c.bd}` }}></td><td colSpan={3} className="muted">{p.name}</td>
-                      <td colSpan={2} className="muted mono">{p.iban}</td>
+                    <tr style={{ background: hit ? "rgba(231,177,90,.12)" : "var(--bg)" }}>
+                      <td style={{ borderLeft: `4px solid ${hit ? "#e7b15a" : c.bd}` }}></td><td colSpan={3} className="muted">{highlight(p.name, ql)}</td>
+                      <td colSpan={2} className="muted mono">{highlight(p.iban, ql)}</td>
                       <td className="amount">{formatEur(p.amountCents)}</td>
-                      <td colSpan={2} className="muted">{p.purpose}{ml && <span className="pill" style={{ marginLeft: 8 }}>{ml}</span>}</td>
+                      <td colSpan={2} className="muted">{highlight(p.purpose, ql)}{ml && <span className="pill" style={{ marginLeft: 8 }}>{ml}</span>}</td>
                     </tr>
                     {p.note && (
                       <tr style={{ background: "var(--bg)" }}>
