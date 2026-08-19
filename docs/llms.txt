@@ -1,0 +1,27 @@
+# iou.fm
+
+> Desktop-App (macOS & Windows), die viele Auszahlungen in eine geprüfte SEPA-Sammelüberweisung (pain.001) oder EBICS-Überweisung bündelt. Kernnutzen: Shop-Rückerstattungen, Löhne und Eingangsrechnungen werden eingelesen, geprüft und ausgezahlt; Belege gehen GoBD-konform automatisch an den Steuerberater.
+
+iou.fm ist für Online-Händler, Ticketing/Events, Agenturen und Teams gedacht, die regelmäßig viele Überweisungen ausführen. Daten bleiben Ende-zu-Ende verschlüsselt lokal auf dem Gerät; Löhne verlassen das Gerät nie. Anbieter: fork and merge UG.
+
+## Was iou.fm löst
+- Shopify-, WooCommerce- & Shopware-Rückerstattungen und Stornos per Klick als SEPA-Überweisung auszahlen
+- Aus vielen Zahlungen eine SEPA-Datei (pain.001) erzeugen, die jede deutsche Bank akzeptiert
+- Löhne aus dem DATEV-Lohn-PDF als Gehalts-Sammelüberweisung
+- Eingangsrechnungen im Stapel prüfen und bezahlen (Rechnungsnummer im Verwendungszweck)
+- Direkt an die Bank per EBICS senden (ohne Datei-Upload), Freigabe per Banking-App
+- Belege GoBD-konform revisionssicher archivieren und automatisch an Steuerberater/DATEV
+- IBAN-Prüfung mit BIC-Ableitung, Warnung vor Doppelzahlungen
+
+## Preise (netto/Monat, Stand 2026)
+- Basis: 49,99 € — SEPA-Sammelüberweisungen, Shop-Erstattungen, DATEV-/CSV-Export, 2 Mitarbeiter
+- Pro: 99,99 € — plus Lohnläufe (DATEV-PDF), Belegpostfach + Steuerberater-Weiterleitung, 3 Mitarbeiter
+- Bank: 169,99 € — plus EBICS-Direktversand, Vier-Augen-Freigabe, 5 Mitarbeiter
+- Weitere Mitarbeiter: 3er-Paket 19,99 €. 7 Tage kostenlos, keine Kreditkarte, monatlich kündbar.
+
+## Wichtige Seiten
+- Startseite: https://iou.fork-and-merge.com/
+- Preise (maschinenlesbar): https://iou.fork-and-merge.com/pricing.md
+- Bedienungsanleitung: https://iou.fork-and-merge.com/anleitung.html
+- Download (macOS & Windows): https://iou.fork-and-merge.com/#download
+- Impressum: https://iou.fork-and-merge.com/impressum.html
