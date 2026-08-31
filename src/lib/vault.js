@@ -99,16 +99,17 @@ export function sharedSubset(data) {
 }
 const indexById = (arr = []) => { const m = new Map(); for (const x of arr) if (x && x.id != null) m.set(x.id, x); return m; };
 function unionById(a = [], b = []) { const m = indexById(a); for (const x of b || []) if (x && x.id != null) m.set(x.id, x); return Array.from(m.values()); }
-// Rechnungen zusammenführen wie unionById, ABER: eine bereits „erledigte" (bezahlte)
-// Rechnung darf NIE wieder auf „offen" zurückfallen – egal, welche Seite beim Sync älter ist.
-// Vorher gewann stumpf die (evtl. veraltete) Server-Version → frisch bezahlte Rechnungen
-// tauchten nach dem nächsten Abgleich wieder als „offen" auf. Bezahlte Daten gehen nie verloren.
-function mergeInvoices(a = [], b = []) {
+// Wie unionById, ABER: ein bereits „erledigter" (bezahlter/ausgeführter) Eintrag darf NIE wieder
+// auf „offen" zurückfallen – egal, welche Seite beim Sync älter ist. Vorher gewann stumpf die
+// (evtl. veraltete) Server-Version → frisch bezahlte Rechnungen UND Erstattungen tauchten nach dem
+// nächsten Abgleich wieder als „offen" auf. Gilt für Rechnungen und Erstattungen. Bezahlte Daten
+// gehen nie verloren.
+function mergeKeepDone(a = [], b = []) {
   const m = indexById(a);
   for (const x of b || []) {
     if (!x || x.id == null) continue;
     const cur = m.get(x.id);
-    // Lokal bereits bezahlt, Server noch offen → lokale (erledigte) Version behalten.
+    // Lokal bereits erledigt, Server noch offen → lokale (erledigte) Version behalten.
     if (cur && cur.status === "erledigt" && x.status !== "erledigt") continue;
     m.set(x.id, x); // sonst Server-Version übernehmen (inkl. Server=erledigt gewinnt über offen)
   }
@@ -128,8 +129,8 @@ export function mergeShared(localData, shared) {
     ...localData,
     accounts: alive(unionById(localData.accounts, shared.accounts)),
     suppliers: alive(unionById(localData.suppliers, shared.suppliers)),
-    refunds: alive(unionById(localData.refunds, shared.refunds)),
-    invoices: alive(mergeInvoices(localData.invoices, shared.invoices)),
+    refunds: alive(mergeKeepDone(localData.refunds, shared.refunds)),
+    invoices: alive(mergeKeepDone(localData.invoices, shared.invoices)),
     creditors: { ...(localData.creditors || {}), ...(shared.creditors || {}) },
     // Revisionssicheres Belege-Archiv: nur VEREINIGEN, nie verkleinern (append-only) –
     // einmal archivierte Belege bleiben dauerhaft erhalten.
