@@ -157,7 +157,7 @@ Gut zu wissen: Die Bank sperrt den Zugang, wenn du nicht **innerhalb von 60 Tage
 - **App startet am Mac nicht?** Erststart per Rechtsklick → „Öffnen".
 - **Updates?** Automatisch: Ist beim Anmelden eine neue Version da, installiert sie sich selbst (kurzer Lade-Hinweis), danach Neustart – einfach wieder per Touch ID anmelden. Schon eingeloggt? Dann erscheint oben der Button „Jetzt aktualisieren".
 - **Sieht der Steuerberater alles?** Nein, nur die gesendete CSV.
-- **Mehrere Personen gleichzeitig?** Ja – außer Gehälter (bleiben lokal).
+- **Mehrere Personen gleichzeitig?** Ja – außer Gehälter (bleiben lokal). Änderungen werden automatisch mit der Cloud abgeglichen; du musst nichts anklicken. Falls eine Änderung wegen eines kurzen Netz-Aussetzers nicht durchging, erscheint oben rechts **„⟳ Nicht synchronisiert"** – die App versucht es automatisch erneut, du kannst aber auch draufklicken, um es sofort zu wiederholen. Erst wenn der Hinweis weg ist, sehen die anderen Geräte deinen Stand.
 - **Passwort vergessen?** Nicht wiederherstellbar – sicher aufbewahren.
 
 ---

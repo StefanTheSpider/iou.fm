@@ -45,6 +45,8 @@ export default function App() {
   const [updating, setUpdating] = useState(false);
   const [updErr, setUpdErr] = useState("");
   const [saveErr, setSaveErr] = useState(""); // sichtbarer Hinweis, falls lokales Speichern fehlschlägt
+  const [syncPending, setSyncPending] = useState(false); // Push kam (noch) nicht am Hub an → sichtbarer Hinweis + Auto-Retry
+  const pendingRef = useRef(false);                       // Spiegel von syncPending für den Retry-Timer
   const [feed, setFeed] = useState(null);       // Shopify-Feed vom Hub (Stornos/Refunds/Anfragen)
   const [feedBusy, setFeedBusy] = useState(false);
   const [ownerView, setOwnerView] = useState({ asUser: false, payout: null, rechnung: null, demo: false });
@@ -194,7 +196,11 @@ export default function App() {
         applyMerged(res.data);
         await saveVault(sessionRef.current, res.data);
       }
-    } catch (e) { console.warn("Sync (push) fehlgeschlagen:", e.message); }
+      pendingRef.current = false; setSyncPending(false);   // erfolgreich am Hub angekommen
+    } catch (e) {
+      console.warn("Sync (push) fehlgeschlagen:", e.message);
+      pendingRef.current = true; setSyncPending(true);     // nicht angekommen → der Retry-Timer versucht es erneut
+    }
   }, [applyMerged]);
 
   // Herunterladen + zusammenführen (beim Anmelden / manuell / Fenster-Fokus).
@@ -256,6 +262,20 @@ export default function App() {
     };
   }, [session, dirty, pullQuiet]);
 
+  // Selbstheilender Push: kam eine gespeicherte Änderung nicht am Hub an (kurzer Netz-Aussetzer,
+  // App zu schnell geschlossen), wird sie automatisch erneut hochgeladen – per Timer, bei erneutem
+  // Fenster-Fokus und sobald wieder Netz da ist. Beim Start einmal flushen, falls lokal etwas
+  // gespeichert, aber noch nicht gepusht wurde. So bleibt der geteilte Stand für ALLE Geräte aktuell.
+  useEffect(() => {
+    if (!session || !session.tenantId) return;
+    const retry = () => { if (pendingRef.current) pushQuiet(); };
+    pushQuiet();
+    const iv = setInterval(retry, 20000);
+    window.addEventListener("online", retry);
+    window.addEventListener("focus", retry);
+    return () => { clearInterval(iv); window.removeEventListener("online", retry); window.removeEventListener("focus", retry); };
+  }, [session, pushQuiet]);
+
   // Standard: Änderung wird nur im Speicher gehalten und als "ungespeichert"
   // markiert (Speichern-Button erscheint). Mit immediate=true sofort sichern.
   const updateData = useCallback((mutator, immediate = false) => {
@@ -266,7 +286,7 @@ export default function App() {
     sessionRef.current = next;
     setSession(next);
     if (immediate) {
-      saveVault(next, nextData).then(() => { setDirty(false); setDirtyCount(0); setSaveErr(""); flashSaved(); pushQuiet(); })
+      saveVault(next, nextData).then(() => { setDirty(false); setDirtyCount(0); setSaveErr(""); flashSaved(); pendingRef.current = true; pushQuiet(); })
         .catch((e) => { console.error("Speichern fehlgeschlagen", e); setSaveErr("Speichern fehlgeschlagen – deine letzte Änderung wurde NICHT gespeichert. Bitte erneut versuchen."); });
     } else {
       setDirty(true);
@@ -277,7 +297,7 @@ export default function App() {
   const commit = useCallback(() => {
     const s = sessionRef.current;
     if (!s) return;
-    saveVault(s, s.data).then(() => { setDirty(false); setDirtyCount(0); setSaveErr(""); flashSaved(); pushQuiet(); })
+    saveVault(s, s.data).then(() => { setDirty(false); setDirtyCount(0); setSaveErr(""); flashSaved(); pendingRef.current = true; pushQuiet(); })
       .catch((e) => { console.error("Speichern fehlgeschlagen", e); setSaveErr("Speichern fehlgeschlagen – deine Änderungen wurden NICHT gespeichert. Bitte erneut versuchen."); });
   }, [flashSaved, pushQuiet]);
 
@@ -514,6 +534,13 @@ export default function App() {
         {dirty && (
           <button className="btn" onClick={commit} style={{ boxShadow: "0 0 0 3px rgba(231,177,90,.25)", fontWeight: 700 }} title="Noch nicht gespeicherte Änderungen jetzt sichern">
             💾 {dirtyCount > 1 ? "Änderungen speichern" : "Änderung speichern"}
+          </button>
+        )}
+        {syncPending && (
+          <button className="lock-btn" onClick={pushQuiet}
+            title="Deine letzte Änderung ist noch nicht mit der Cloud abgeglichen (andere Geräte sehen sie evtl. noch nicht). Klicken, um es jetzt erneut zu versuchen."
+            style={{ background: "rgba(231,177,90,.16)", borderColor: "rgba(231,177,90,.6)", color: "#e7b15a", fontWeight: 700 }}>
+            ⟳ Nicht synchronisiert
           </button>
         )}
         <button className="lock-btn" onClick={() => setThemeMode(effectiveTheme.mode === "light" ? "dark" : "light")} title="Hell/Dunkel umschalten (nur für dich, auf diesem Gerät)" aria-label="Darstellung umschalten">
