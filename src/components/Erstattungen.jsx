@@ -160,8 +160,11 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     const refund = computeRefund({ paidCents, mode: r.mode, value });
     const isEur = r.currency === "EUR";
     const sepaMode = r.method === "ueberweisung" || r.refundViaSepa;
-    const sepaEligible = sepaMode && r.status === "offen" && r.ibanValid && refund.valid && isEur;
-    return { paidCents, refund, isEur, sepaMode, sepaEligible };
+    // IBAN LIVE prüfen – NICHT dem gespeicherten Flag `r.ibanValid` vertrauen. Das kann von einem
+    // anderen Gerät / älteren Stand fälschlich „ungültig" sein, obwohl die IBAN gültig ist.
+    const ibanOk = validateIban(r.iban).ok;
+    const sepaEligible = sepaMode && r.status === "offen" && ibanOk && refund.valid && isEur;
+    return { paidCents, refund, isEur, sepaMode, sepaEligible, ibanOk };
   }
 
   const computed = rows.map((r) => ({ r, ...calc(r) }));
@@ -312,16 +315,16 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       </div>
 
       <div className="refunds">
-        {visible.map(({ r, refund, isEur, sepaMode, sepaEligible }) => {
+        {visible.map(({ r, refund, isEur, sepaMode, sepaEligible, ibanOk }) => {
           const ibanLen = (r.iban || "").replace(/[^0-9A-Za-z]/g, "").length;
-          const showInvalid = sepaMode && !r.ibanValid && ibanLen >= 15;
+          const showInvalid = sepaMode && !ibanOk && ibanLen >= 15;
           // Warum ist dieser offene Eintrag (noch) nicht für die SEPA-Datei auswählbar?
           // block = { field, short, msg } – short für die Kopf-Pille, msg für die zentrierte Kachel-Meldung,
           // field markiert das betroffene Eingabefeld (rot umrandet).
           let block = null;
           if (sepaMode && r.status === "offen" && !sepaEligible) {
             if (!isEur) block = { field: "paid", short: `${r.currency} – kein SEPA`, msg: `Währung ${r.currency} – nur Beträge in EUR sind per SEPA-Überweisung zahlbar.` };
-            else if (!r.ibanValid) block = ibanLen >= 15
+            else if (!ibanOk) block = ibanLen >= 15
               ? { field: "iban", short: "IBAN ungültig", msg: "IBAN ungültig – bitte die IBAN des Empfängers prüfen und korrigieren." }
               : { field: "iban", short: "IBAN fehlt", msg: "IBAN fehlt – bitte die IBAN des Empfängers eintragen, damit überwiesen werden kann." };
             else if (!refund.valid) block = r.mode === "fixed"
@@ -398,7 +401,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                   <label className={`f col-wide ${block?.field === "iban" ? "err" : ""}`}><span>IBAN</span>
                     <input className="mono" type="text" value={r.iban} placeholder="DE…"
                       onChange={(e) => onIbanChange(r.id, e.target.value)} />
-                    {r.ibanValid
+                    {ibanOk
                       ? <span className="pill ok">🟢 {r.bic || "gültig"}</span>
                       : showInvalid && <span className="pill bad">🔴 IBAN ungültig{isErstattung ? " – Kunde fragen" : ""}</span>}
                   </label>

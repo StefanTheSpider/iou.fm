@@ -210,7 +210,9 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const canSee = (r) => canPay || !adminLoaded(r);
   // Pflichtfeld-Prüfung: auch „Geprüft = Ja" darf NICHT auszahlbar machen, wenn etwas fehlt
   // (z. B. Lieferant nicht erkannt). block = { field, msg } für rote Markierung + Meldung.
-  const blockOf = (r, cents) => !r.ibanValid ? { field: "iban", msg: "IBAN fehlt oder ist ungültig" }
+  // IBAN LIVE prüfen statt dem gespeicherten `r.ibanValid` zu vertrauen (kann von einem anderen
+  // Gerät/älteren Stand fälschlich „ungültig" sein, obwohl die IBAN gültig ist).
+  const blockOf = (r, cents) => !validateIban(r.iban).ok ? { field: "iban", msg: "IBAN fehlt oder ist ungültig" }
     : !(cents > 0) ? { field: "amount", msg: "Betrag fehlt" }
     : !String(r.creditorName || "").trim() ? { field: "creditor", msg: "Lieferant fehlt" } : null;
   const computed = rows.map((r) => {
@@ -459,7 +461,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
               <input type="text" value={r.creditorName} style={errBox("creditor")} placeholder={flagged && block.field === "creditor" ? "Lieferant fehlt – bitte eintragen" : ""} onChange={(e) => patchRow(r.id, { creditorName: e.target.value })} /></label>
             <label className="field" style={{ minWidth: 280 }}><span>IBAN</span>
               <input type="text" value={r.iban} style={errBox("iban")} onChange={(e) => onIbanChange(r.id, e.target.value)} placeholder="DE…" />
-              <span className="note">{r.iban ? (r.ibanValid ? `✓ ${formatIban(r.iban)}${r.bic ? " · " + r.bic : ""}` : `⚠︎ ${r.ibanReason || "ungültig"}`) : ""}</span>
+              <span className="note">{r.iban ? (validateIban(r.iban).ok ? `✓ ${formatIban(r.iban)}${r.bic ? " · " + r.bic : ""}` : `⚠︎ ${r.ibanReason || "ungültig"}`) : ""}</span>
             </label>
             <label className="field"><span>Betrag (€)</span>
               <input type="text" value={r.amount} style={errBox("amount")} onChange={(e) => patchRow(r.id, { amount: e.target.value })} /></label>

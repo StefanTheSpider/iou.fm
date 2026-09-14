@@ -40,7 +40,7 @@ const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || "./data";
 const TENANT_DIR = path.join(DATA_DIR, "tenants");
 const USER_DIR = path.join(DATA_DIR, "users");
-const MAX_BODY = 8 * 1024 * 1024;
+const MAX_BODY = 64 * 1024 * 1024;   // 64 MB (vorher 8 MB – Voll-Sync mit Archiv-XML + Belege-Archiv wuchs darüber und Pushes scheiterten still)
 const ORIGIN = process.env.CORS_ORIGIN || "*";
 
 const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
@@ -211,11 +211,44 @@ const validUser = (u) => /^[a-zA-Z0-9._@-]{1,64}$/.test(u || "");
 const tenantFile = (id) => path.join(TENANT_DIR, `${id}.json`);
 const userFile = (u) => path.join(USER_DIR, `${String(u).toLowerCase()}.json`);
 
-async function readJson(file) { try { return JSON.parse(await fs.readFile(file, "utf8")); } catch { return null; } }
+// Selbstheilendes Lesen: eine beschädigte JSON-Datei (z. B. Datenmüll am Ende nach einem
+// Filesystem-Recovery) darf NIE eine ganze Route auf 404 setzen. Reihenfolge der Rettung:
+//   1) normal parsen
+//   2) „Extra data after JSON" → gültigen Anfang abschneiden, sichern und sauber zurückschreiben
+//   3) letzte gültige Version aus <datei>.bak
+// Erst wenn alles scheitert -> null (mit deutlichem Log statt still).
+async function readJson(file) {
+  let raw;
+  try { raw = await fs.readFile(file, "utf8"); }
+  catch { return null; }                                 // Datei fehlt wirklich
+  try { return JSON.parse(raw); }
+  catch (e) {
+    const m = /position (\d+)/.exec(e.message || "");     // Rettung 1: gültigen Prefix retten
+    if (m) {
+      try {
+        const obj = JSON.parse(raw.slice(0, +m[1]));
+        try { await fs.copyFile(file, `${file}.corrupt.${Date.now()}`); } catch {}
+        await writeJson(file, obj);                        // sauber + atomar zurückschreiben
+        console.warn(`[data] ${file}: automatisch repariert (${raw.length - (+m[1])} Byte Datenmüll entfernt).`);
+        return obj;
+      } catch { /* Anfang auch kaputt -> weiter zu .bak */ }
+    }
+    try {                                                  // Rettung 2: letzte gute Version
+      const obj = JSON.parse(await fs.readFile(`${file}.bak`, "utf8"));
+      await writeJson(file, obj);
+      console.warn(`[data] ${file}: aus .bak wiederhergestellt.`);
+      return obj;
+    } catch {}
+    console.error(`[data] ${file}: JSON beschädigt und nicht reparierbar: ${e.message}`);
+    return null;
+  }
+}
 async function writeJson(file, obj) {
   const tmp = file + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(obj));
-  await fs.rename(tmp, file); // atomar
+  const json = JSON.stringify(obj);
+  await fs.writeFile(tmp, json);
+  await fs.rename(tmp, file);                             // atomar
+  try { await fs.writeFile(`${file}.bak`, json); } catch {}  // Rückfallebene = zuletzt gültig geschriebener Stand
 }
 // Zentral gegen ungültige/böswillige IDs absichern (Pfad-Sicherheit) – schützt ALLE Routen,
 // auch die, die vor readTenant kein eigenes validId() hatten.
@@ -1258,7 +1291,13 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === "PUT") {
         const b = await body(req);
-        if (b.__err) return send(res, b.__err === "too_large" ? 413 : 400, { error: b.__err });
+        if (b.__err) {
+          if (b.__err === "too_large") console.warn(`[doc] PUT ABGELEHNT tenant=${id} grund=too_large (Limit ${(MAX_BODY/1048576)|0} MB)`);
+          return send(res, b.__err === "too_large" ? 413 : 400, { error: b.__err });
+        }
+        const _plen = (b.payload && b.payload.length) || 0;
+        console.log(`[doc] PUT tenant=${id} payload=${(_plen/1048576).toFixed(2)} MB`);
+        if (_plen > 6 * 1024 * 1024) console.warn(`[doc] GROSSER Sync-Payload tenant=${id} ~${(_plen/1048576).toFixed(1)} MB – bald schlank machen (Archiv-XML/Belege aus Voll-Sync nehmen).`);
         return await withLock(id, async () => {
           const cur = await readTenant(id);
           if (!cur) return send(res, 404, { error: "not_found" });
