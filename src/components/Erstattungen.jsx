@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { inspectIban, formatIban, validateIban, cleanIban } from "../lib/iban.js";
+import BufferedInput from "./BufferedInput.jsx";
 import { parseAmount, formatEur } from "../lib/money.js";
 import { computeRefund, REFUND_MODES } from "../lib/refund.js";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
@@ -341,12 +342,12 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                     title={sepaEligible ? "in SEPA-Datei aufnehmen" : `Noch nicht auswählbar – ${blockReason || "Angaben unvollständig"}`} />
                 )}
                 <div className="who-wrap">
-                  <input className="who-input" value={r.customerName} placeholder={isErstattung ? "Name / Kontoinhaber" : "Empfänger"}
-                    onChange={(e) => patchRow(r.id, { customerName: e.target.value })} />
+                  <BufferedInput className="who-input" value={r.customerName} placeholder={isErstattung ? "Name / Kontoinhaber" : "Empfänger"}
+                    onCommit={(v) => patchRow(r.id, { customerName: v })} />
                   {isErstattung && (
                     <div className="head-meta">
-                      <input className="ord-input" value={r.orderNumber} placeholder="Best.-Nr."
-                        onChange={(e) => patchRow(r.id, { orderNumber: e.target.value })} />
+                      <BufferedInput className="ord-input" value={r.orderNumber} placeholder="Best.-Nr."
+                        onCommit={(v) => patchRow(r.id, { orderNumber: v })} />
                       <span className="pill">{methodLabel(r.method)}</span>
                       {r.refundViaSepa && r.method !== "ueberweisung" && <span className="pill warn">→ per Überweisung</span>}
                       {r.orderNumber && cancelledSet.has(String(r.orderNumber).replace(/^#/, "")) && <span className="pill bad" title="laut Shopify storniert">storniert</span>}
@@ -394,13 +395,13 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                     </div></label>
                 )}
                 <label className={`f ${block?.field === "paid" ? "err" : ""}`}><span>{isErstattung ? "Gezahlt (€)" : "Betrag (€)"}</span>
-                  <input className="mono" type="text" value={r.paid} placeholder="0,00"
-                    onChange={(e) => patchRow(r.id, { paid: e.target.value })} />
+                  <BufferedInput className="mono" type="text" value={r.paid} placeholder="0,00"
+                    onCommit={(v) => patchRow(r.id, { paid: v })} />
                   {!isEur && <span className="pill warn">{r.currency} – kein SEPA</span>}</label>
                 {sepaMode && (
                   <label className={`f col-wide ${block?.field === "iban" ? "err" : ""}`}><span>IBAN</span>
-                    <input className="mono" type="text" value={r.iban} placeholder="DE…"
-                      onChange={(e) => onIbanChange(r.id, e.target.value)} />
+                    <BufferedInput className="mono" type="text" value={r.iban} placeholder="DE…"
+                      onCommit={(v) => onIbanChange(r.id, v)} />
                     {ibanOk
                       ? <span className="pill ok">🟢 {r.bic || "gültig"}</span>
                       : showInvalid && <span className="pill bad">🔴 IBAN ungültig{isErstattung ? " – Kunde fragen" : ""}</span>}
@@ -417,10 +418,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                     </div></label>
                 )}
                 <label className="f col-full"><span>Verwendungszweck</span>
-                  <input type="text" value={r.purpose} onChange={(e) => patchRow(r.id, { purpose: e.target.value })} /></label>
+                  <BufferedInput type="text" value={r.purpose} onCommit={(v) => patchRow(r.id, { purpose: v })} /></label>
                 <label className="f col-full"><span>Interner Kommentar (Grund der Erstattung)</span>
-                  <input type="text" value={r.note || ""} placeholder="z. B. Konzert abgesagt, Kulanz, Doppelbuchung …"
-                    onChange={(e) => patchRow(r.id, { note: e.target.value })} /></label>
+                  <BufferedInput type="text" value={r.note || ""} placeholder="z. B. Konzert abgesagt, Kulanz, Doppelbuchung …"
+                    onCommit={(v) => patchRow(r.id, { note: v })} /></label>
               </div>
             </div>
           );

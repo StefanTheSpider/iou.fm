@@ -29,9 +29,21 @@ function mod97(iban) {
   return remainder;
 }
 
+// Ergebnis-Cache: validateIban ist rein (Eingabe → Ergebnis) und wird pro Render für jede Zeile
+// aufgerufen. Der Cache macht wiederholte Aufrufe O(1) und entlastet die Listen spürbar.
+const _validateCache = new Map();
+
 // Vollständige Prüfung: Struktur + Länge + Prüfziffer.
 export function validateIban(raw) {
   const iban = cleanIban(raw);
+  const cached = _validateCache.get(iban);
+  if (cached) return cached;
+  const res = _validateIban(iban);
+  if (_validateCache.size > 5000) _validateCache.clear();
+  _validateCache.set(iban, res);
+  return res;
+}
+function _validateIban(iban) {
   if (!iban) return { ok: false, iban, reason: "leer", code: "empty" };
   if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(iban))
     return { ok: false, iban, reason: "ungültiges Format", code: "format" };

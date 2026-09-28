@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { parseAmount, formatEur } from "../lib/money.js";
 import { validateIban, cleanIban, formatIban, inspectIban } from "../lib/iban.js";
+import BufferedInput from "./BufferedInput.jsx";
 import { buildSepaXml, downloadXml } from "../lib/sepa.js";
 import { extractInvoice } from "../lib/invoicePdf.js";
 import { fetchMailInvoices } from "../lib/mailInvoices.js";
@@ -458,21 +459,21 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
           )}
           <div className="row">
             <label className="field"><span>Lieferant</span>
-              <input type="text" value={r.creditorName} style={errBox("creditor")} placeholder={flagged && block.field === "creditor" ? "Lieferant fehlt – bitte eintragen" : ""} onChange={(e) => patchRow(r.id, { creditorName: e.target.value })} /></label>
+              <BufferedInput type="text" value={r.creditorName} style={errBox("creditor")} placeholder={flagged && block.field === "creditor" ? "Lieferant fehlt – bitte eintragen" : ""} onCommit={(v) => patchRow(r.id, { creditorName: v })} /></label>
             <label className="field" style={{ minWidth: 280 }}><span>IBAN</span>
-              <input type="text" value={r.iban} style={errBox("iban")} onChange={(e) => onIbanChange(r.id, e.target.value)} placeholder="DE…" />
+              <BufferedInput type="text" value={r.iban} style={errBox("iban")} onCommit={(v) => onIbanChange(r.id, v)} placeholder="DE…" />
               <span className="note">{r.iban ? (validateIban(r.iban).ok ? `✓ ${formatIban(r.iban)}${r.bic ? " · " + r.bic : ""}` : `⚠︎ ${r.ibanReason || "ungültig"}`) : ""}</span>
             </label>
             <label className="field"><span>Betrag (€)</span>
-              <input type="text" value={r.amount} style={errBox("amount")} onChange={(e) => patchRow(r.id, { amount: e.target.value })} /></label>
+              <BufferedInput type="text" value={r.amount} style={errBox("amount")} onCommit={(v) => patchRow(r.id, { amount: v })} /></label>
             {opts.skonto && <label className="field" style={{ maxWidth: 110 }}><span>Skonto %</span>
               <input type="number" min={0} max={20} value={r.skontoPct} onChange={(e) => patchRow(r.id, { skontoPct: e.target.value })} /></label>}
             {opts.useDueDate && <label className="field" style={{ maxWidth: 160 }}><span>Fällig am</span>
               <input type="date" value={r.dueDate || ""} onChange={(e) => patchRow(r.id, { dueDate: e.target.value })} /></label>}
             <label className="field"><span>Rechnungsnr.</span>
-              <input type="text" value={r.invoiceNumber} onChange={(e) => patchRow(r.id, { invoiceNumber: e.target.value })} /></label>
+              <BufferedInput type="text" value={r.invoiceNumber} onCommit={(v) => patchRow(r.id, { invoiceNumber: v })} /></label>
             <label className="field col-full"><span>Verwendungszweck</span>
-              <input type="text" value={r.purpose} onChange={(e) => patchRow(r.id, { purpose: e.target.value })} /></label>
+              <BufferedInput type="text" value={r.purpose} onCommit={(v) => patchRow(r.id, { purpose: v })} /></label>
             {r.status === "offen" && (
               <label className="field"><span>Geprüft &amp; freigegeben?</span>
                 <select value={r.checked ? "ja" : "nein"} disabled={!mayReview}
