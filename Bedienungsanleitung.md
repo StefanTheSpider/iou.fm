@@ -113,7 +113,7 @@ Die SHA-256-Prüfsumme wird mit angezeigt.
 
 ## 8 · Export für den Steuerberater
 
-Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als DATEV-Buchungsstapel oder CSV (Umlaut-sicher). Optional: automatischer Monatsversand der Stornos-/Erstattungs-CSV per E-Mail (Stammdaten). Diese CSV enthält zu jedem Vorgang auch die **Zahlungsmethode**, mit der der Kunde ursprünglich bezahlt hat (z. B. PayPal, Kreditkarte, Klarna).
+Im **Archiv** liegt die Historie aller SEPA-Dateien (filterbar) – Export als DATEV-Buchungsstapel oder CSV (Umlaut-sicher). Optional: automatischer Monatsversand der Stornos-/Erstattungs-CSV per E-Mail (Stammdaten). Diese CSV enthält zu jedem Vorgang auch die **Zahlungsmethode**, mit der der Kunde ursprünglich bezahlt hat (z. B. PayPal, Kreditkarte, Klarna), die **Erstattungsart** (Voll / Teilbetrag / Fester Betrag) und den **internen Kommentar** – also den Grund, den du bei der Erstattung eingetragen hast. So sieht der Steuerberater auf einen Blick, ob es ein Teil- oder Vollbetrag war und warum zurückgezahlt wurde.
 
 Der automatische Versand läuft **immer am Monatsende um 23:59** – unabhängig davon, ob die App gerade offen ist. Lag im Monat mindestens eine ausgeführte Bestellung vor, hängt die Mail zusätzlich das **Versand-Archiv** des Monats als zweite CSV an. Einen einzelnen Monat kannst du in den Stammdaten (Belege & Buchhaltung → Monat wählen → „Monat jetzt senden") auch manuell nachschicken.
 

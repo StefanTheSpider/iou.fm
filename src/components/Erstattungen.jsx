@@ -226,6 +226,8 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
         purpose: r.purpose || "",
         amountCents: refund.refundCents, paidCents: parseAmount(r.paid).cents,
         date: execDate, currency: r.currency || "EUR",
+        note: r.note || "",                                   // interner Kommentar (Grund) → Buchhalter-CSV
+        refundMode: r.mode || "", feePct: r.mode === "fee" ? r.feePct : "",
       })).filter((s) => s.amountCents > 0);
       if (summaries.length) onAppRefunds(summaries);
     }

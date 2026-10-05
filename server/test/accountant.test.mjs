@@ -29,15 +29,15 @@ ok(may.length === 3, "Mai: 3 Zeilen (1001, 1003, 1005) – nicht 4");
 const csv = buildAccountantCsv(feed, "2026-05");
 ok(csv.charCodeAt(0) === 0xFEFF, "CSV: UTF-8-BOM für korrekte Umlaute in Excel");
 const head = csv.replace(/^﻿/, "").split("\r\n")[0];
-ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Zahlungsmethode;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR)", "CSV: Kopfzeile mit Zahlungsmethode-Spalte");
-ok(csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;;Erstattung 1005 Lady Gaga;200,00;200,00"), "CSV: 1005 eine Zeile, Verwendungszweck gefüllt, 200,00");
+ok(head === "Art;Veranstaltung;Datum;Kunde;Bestellnummer;Kategorie;Erstattungsart;Zahlungsmethode;Verwendungszweck;Urspr. gezahlt (EUR);Erstattet/Storniert (EUR);Kommentar", "CSV: Kopfzeile mit Erstattungsart- + Kommentar-Spalte");
+ok(csv.includes("Storniert & erstattet;Lady Gaga;11.05.2026;Eva;1005;Konzerte DE;Voller Betrag;;Erstattung 1005 Lady Gaga;200,00;200,00;"), "CSV: 1005 eine Zeile, Erstattungsart (Voller Betrag), 200,00");
 ok(comb.find((r) => r.orderNumber === "1001").purpose === "Stornierung 1001 BTS München", "Verwendungszweck auch bei reinem Storno gefüllt");
-ok(/Summe;;;;;;;;;403,00/.test(csv), "CSV: Summe 129 + 74 + 200 = 403,00 (keine Doppelzählung)");
+ok(/Summe;;;;;;;;;;403,00/.test(csv), "CSV: Summe 129 + 74 + 200 = 403,00 (keine Doppelzählung)");
 
-// App-/SEPA-Erstattung mit Verwendungszweck + urspr. Betrag
-const app = [{ orderNumber: "29985", customer: "Melissa", event: "BTS", amountCents: 14990, paidCents: 149900, purpose: "Erstattung 29985 BTS", date: "2026-05-15", category: "" }];
+// App-/SEPA-Erstattung mit Verwendungszweck + urspr. Betrag + Erstattungsart + internem Kommentar
+const app = [{ orderNumber: "29985", customer: "Melissa", event: "BTS", amountCents: 14990, paidCents: 149900, purpose: "Erstattung 29985 BTS", date: "2026-05-15", category: "", note: "Konzert abgesagt", refundMode: "fixed" }];
 const csvApp = buildAccountantCsv(feed, "2026-05", app);
-ok(csvApp.includes("Erstattung (App/SEPA);BTS;15.05.2026;Melissa;29985;;;Erstattung 29985 BTS;1499,00;149,90"), "CSV: App-Erstattung mit Verwendungszweck + urspr. gezahlt (1499,00) + erstattet (149,90)");
+ok(csvApp.includes("Erstattung (App/SEPA);BTS;15.05.2026;Melissa;29985;;Fester Betrag;;Erstattung 29985 BTS;1499,00;149,90;Konzert abgesagt"), "CSV: App-Erstattung mit Erstattungsart (Fester Betrag) + Kommentar");
 
 // Zahlungsmethode fließt in die CSV.
 const csvPay = buildAccountantCsv({ refunds: [{ date: "2026-05-22T09:00:00Z", event: "E", customer: "C", orderNumber: "2001", category: "X", amountCents: 5000, paidCents: 8000, paymentMethod: "PayPal" }] }, "2026-05");

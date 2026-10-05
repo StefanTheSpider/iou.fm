@@ -43,9 +43,22 @@ export function combinedEntries(feed, appRefunds = []) {
       category: a.category || "", amountCents: a.amountCents, paidCents: a.paidCents ?? a.amountCents,
       paymentMethod: a.paymentMethod || "",
       purpose: a.purpose || vz("Erstattung", a.orderNumber, a.event),
+      note: a.note || "", refundMode: a.refundMode || "", feePct: a.feePct || "",
     });
   }
   return rows;
+}
+
+// Erstattungsart lesbar: aus dem App-Modus (full/fee/fixed) oder – fehlt der – aus den Beträgen
+// abgeleitet (Teil vs. voller Betrag), damit die Buchhalterin Teilbetrag/Vollbetrag sofort sieht.
+export function erstattungsartLabel(r) {
+  if (r.refundMode === "full") return "Voll (100 %)";
+  if (r.refundMode === "fee") return `Teil${r.feePct ? ` (${r.feePct} % Gebühr)` : ""}`;
+  if (r.refundMode === "fixed") return "Fester Betrag";
+  if (/Stornierung/i.test(r.art || "") && !/erstattet/i.test(r.art || "")) return "Storno";
+  const paid = r.paidCents ?? r.amountCents;
+  if (paid > 0 && r.amountCents != null) return r.amountCents < paid ? "Teilbetrag" : "Voller Betrag";
+  return "";
 }
 export function entriesForMonth(feed, ym, appRefunds = []) {
   return combinedEntries(feed, appRefunds)
@@ -55,15 +68,15 @@ export function entriesForMonth(feed, ym, appRefunds = []) {
 
 // CSV (deutsch: ; getrennt, Komma als Dezimal) für die Buchhaltung.
 export function buildAccountantCsv(feed, ym, appRefunds = []) {
-  const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Zahlungsmethode", "Verwendungszweck", "Urspr. gezahlt (EUR)", "Erstattet/Storniert (EUR)"];
+  const head = ["Art", "Veranstaltung", "Datum", "Kunde", "Bestellnummer", "Kategorie", "Erstattungsart", "Zahlungsmethode", "Verwendungszweck", "Urspr. gezahlt (EUR)", "Erstattet/Storniert (EUR)", "Kommentar"];
   const entries = entriesForMonth(feed, ym, appRefunds);
   const rows = entries.map((r) => [
     r.art, r.event || "", deDate(r.date), r.customer || "", r.orderNumber || "", r.category || "",
-    r.paymentMethod || "", r.purpose || "", eur(r.paidCents), eur(r.amountCents),
+    erstattungsartLabel(r), r.paymentMethod || "", r.purpose || "", eur(r.paidCents), eur(r.amountCents), r.note || "",
   ]);
   const sum = entries.reduce((s, r) => s + (r.amountCents || 0), 0);
   rows.push([]);
-  rows.push(["Summe", "", "", "", "", "", "", "", "", eur(sum)]);
+  rows.push(["Summe", "", "", "", "", "", "", "", "", "", eur(sum), ""]);
   // UTF-8-BOM voranstellen, damit Excel ä/ö/ü korrekt anzeigt (sonst „Ã¤").
   return "﻿" + [head, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
 }

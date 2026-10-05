@@ -1425,6 +1425,9 @@ const server = http.createServer(async (req, res) => {
           purpose: String(r.purpose || "").slice(0, 200),
           date: String(r.date || "").slice(0, 30),
           currency: String(r.currency || "EUR").slice(0, 8),
+          note: String(r.note || "").slice(0, 500),            // interner Kommentar (Grund der Erstattung) für die Buchhalter-CSV
+          refundMode: String(r.refundMode || "").slice(0, 20), // full | fee | fixed -> Erstattungsart-Spalte
+          feePct: String(r.feePct ?? "").slice(0, 10),
         })).filter((r) => r.amountCents > 0);
         const key = (r) => `${r.orderNumber}|${r.date}|${r.amountCents}`;
         const seen = new Set((t.appRefunds || []).map(key));
