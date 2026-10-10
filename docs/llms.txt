@@ -24,4 +24,5 @@ iou.fm ist für Online-Händler, Ticketing/Events, Agenturen und Teams gedacht, 
 - Preise (maschinenlesbar): https://iou.fork-and-merge.com/pricing.md
 - Bedienungsanleitung: https://iou.fork-and-merge.com/anleitung.html
 - Download (macOS & Windows): https://iou.fork-and-merge.com/#download
+- Erklärfilm (60 s, MP4): https://iou.fork-and-merge.com/media/iou-spot-1080.mp4
 - Impressum: https://iou.fork-and-merge.com/impressum.html

@@ -23,7 +23,13 @@
 <meta name="twitter:title" content="SEPA-Sammelüberweisung für Shop-Erstattungen, Löhne & Rechnungen – iou.fm" />
 <meta name="twitter:description" content="Aus vielen Zahlungen eine geprüfte SEPA-Datei oder EBICS-Überweisung. Shop-Erstattungen, Löhne, Rechnungen. Belege GoBD-konform an den Steuerberater. 7 Tage kostenlos." />
 <meta name="twitter:image" content="https://iou.fork-and-merge.com/og.png" />
+<meta property="og:video" content="https://iou.fork-and-merge.com/media/iou-spot-720.mp4" />
+<meta property="og:video:type" content="video/mp4" />
+<meta property="og:video:width" content="1280" />
+<meta property="og:video:height" content="720" />
 <link rel="icon" type="image/png" href="favicon.png" />
+<link rel="preload" href="media/hanken.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="media/spot-poster.jpg" as="image" />
 
 <script type="application/ld+json">
 {
@@ -60,6 +66,18 @@
       "name": "fork and merge UG",
       "url": "https://iou.fork-and-merge.com/",
       "brand": "iou.fm"
+    },
+    {
+      "@type": "VideoObject",
+      "name": "iou.fm in 60 Sekunden – hunderte Überweisungen, ein Klick",
+      "description": "Erklärvideo: Wie iou.fm Shop-Erstattungen aus Shopify, WooCommerce und Shopware, Löhne und Rechnungen in drei Schritten (Reinziehen, Prüfen, Senden) zu einer geprüften SEPA-Sammelüberweisung oder EBICS-Zahlung macht – inklusive GoBD-Belegarchiv und automatischem Versand an den Steuerberater.",
+      "thumbnailUrl": ["https://iou.fork-and-merge.com/media/spot-poster.jpg", "https://iou.fork-and-merge.com/media/spot-endcard.jpg"],
+      "uploadDate": "2026-10-10",
+      "duration": "PT1M",
+      "contentUrl": "https://iou.fork-and-merge.com/media/iou-spot-1080.mp4",
+      "embedUrl": "https://iou.fork-and-merge.com/#film",
+      "inLanguage": "de",
+      "publisher": { "@type": "Organization", "name": "fork and merge UG" }
     },
     {
       "@type": "FAQPage",
@@ -117,6 +135,7 @@
   .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border2);border-radius:12px;padding:12px 20px;font-size:15px;font-weight:700;display:inline-block;transition:.15s}
   .btn-ghost:hover{border-color:var(--gold);text-decoration:none}
   .nav .btn-primary{padding:9px 16px;font-size:14px}
+  .nav .links a.btn-primary,.nav .links a.btn-primary:hover{color:var(--ink)}
 
   /* Hero */
   .hero{position:relative;padding:78px 0 60px;text-align:center;overflow:hidden}
@@ -224,6 +243,72 @@
   footer{border-top:1px solid var(--border);padding:34px 0;text-align:center;color:var(--muted);font-size:13.5px}
   .badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;color:var(--muted);font-size:12.5px}
   .updated{display:inline-block;margin-top:6px;color:var(--muted);font-size:12px}
+
+  /* ===== Redesign 2026-10: Markenschrift (selbst gehostet, kein Google-Fonts-Abruf) ===== */
+  @font-face{font-family:"Hanken Grotesk";src:url(media/hanken.woff2) format("woff2");font-weight:100 900;font-display:swap}
+  @font-face{font-family:"Plex Mono";src:url(media/plexmono.woff2) format("woff2");font-weight:600;font-display:swap}
+  body{font-family:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  h1,h2,h3,.logo,.price,.stat .big,.res .v{font-family:"Hanken Grotesk",-apple-system,sans-serif;letter-spacing:-.02em}
+  .mono{font-family:"Plex Mono",ui-monospace,Menlo,monospace}
+
+  /* Hero: Text links, Film rechts */
+  .hero{text-align:left;padding:64px 0 56px}
+  .hero:before{inset:-200px -10% auto 30%;height:700px;background:radial-gradient(closest-side,rgba(217,178,90,.16),transparent 72%)}
+  .hero-grid{display:grid;grid-template-columns:1.02fr 1.18fr;gap:46px;align-items:center}
+  @media(max-width:940px){.hero-grid{grid-template-columns:1fr;gap:32px}}
+  .hero h1{font-size:clamp(36px,5.6vw,62px);font-weight:850;margin:0 0 18px;max-width:none;line-height:1.04}
+  .hero p.sub{margin:0 0 26px;max-width:560px;font-size:clamp(16px,1.9vw,18.5px)}
+  .hero .cta{justify-content:flex-start}
+  .kicker{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--gold-2);background:rgba(217,178,90,.09);border:1px solid rgba(217,178,90,.3);border-radius:999px;padding:6px 13px;margin-bottom:20px}
+  .kicker i{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(90,217,160,.15);display:inline-block}
+  .hero .microcopy{text-align:left}
+  .h1-pre{display:block;font-size:clamp(15px,1.5vw,17px);font-weight:700;letter-spacing:0;color:var(--muted);margin-bottom:14px;line-height:1.4}
+  .hero .statband{margin-top:46px}
+
+  /* Film-Player */
+  .film{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--border2);background:#000;aspect-ratio:16/9;box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(217,178,90,.08)}
+  .film video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .film .cover{position:absolute;inset:0;border:0;padding:0;margin:0;cursor:pointer;background:center/cover no-repeat;display:flex;align-items:flex-end;justify-content:flex-start;color:#fff;text-align:left;font:inherit}
+  .film .cover:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.72))}
+  .film .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border-radius:50%;background:linear-gradient(180deg,var(--gold-2),var(--gold));box-shadow:0 0 0 10px rgba(217,178,90,.18),0 14px 40px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;transition:transform .2s;z-index:2}
+  .film .play:before{content:"";margin-left:6px;border-left:24px solid var(--ink);border-top:15px solid transparent;border-bottom:15px solid transparent}
+  .film .cover:hover .play,.film .cover:focus-visible .play{transform:translate(-50%,-50%) scale(1.07)}
+  .film .cover:focus-visible{outline:3px solid var(--gold-2);outline-offset:-3px}
+  .film .cap{position:relative;z-index:2;padding:18px 20px;display:flex;gap:10px;align-items:center;font-weight:700;font-size:14.5px}
+  .film .cap .dur{font-family:"Plex Mono",monospace;font-size:12.5px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:2px 7px}
+  .film-note{color:var(--muted);font-size:12.5px;margin-top:10px}
+  @media(prefers-reduced-motion:reduce){.film .play{transition:none}}
+
+  /* Problem-Story (PAS) */
+  .story{display:grid;grid-template-columns:1.1fr 1fr;gap:0;border:1px solid var(--border);border-radius:20px;overflow:hidden;background:var(--panel)}
+  @media(max-width:860px){.story{grid-template-columns:1fr}}
+  .story .pic{min-height:340px;background:center/cover no-repeat;position:relative}
+  .story .pic .stamp{position:absolute;left:20px;bottom:18px;font-weight:850;font-size:30px;letter-spacing:-.02em;text-shadow:0 2px 16px rgba(0,0,0,.7)}
+  .story .pic .stamp small{display:block;font-size:15px;font-weight:600;color:#d7dde5}
+  .story .txt{padding:34px}
+  .pains{list-style:none;padding:0;margin:18px 0 0}
+  .pains li{padding:12px 0 12px 34px;position:relative;border-top:1px solid var(--border);color:var(--muted);font-size:15px}
+  .pains li:first-child{border-top:none}
+  .pains li:before{content:"";position:absolute;left:4px;top:19px;width:14px;height:2px;background:var(--bad);transform:rotate(45deg);box-shadow:0 0 0 0}
+  .pains li:after{content:"";position:absolute;left:4px;top:19px;width:14px;height:2px;background:var(--bad);transform:rotate(-45deg)}
+  .pains li b{color:var(--text)}
+
+  /* Schritte mit echten App-Screens */
+  .step .shot{margin:-22px -22px 18px;border-bottom:1px solid var(--border);border-radius:16px 16px 0 0;overflow:hidden;aspect-ratio:16/9;background:#0b0e13}
+  .step .shot img{width:100%;height:100%;object-fit:cover;object-position:left top;display:block}
+  .result-band{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel)}
+  @media(max-width:760px){.result-band{grid-template-columns:1fr}}
+  .result-band .shot{aspect-ratio:16/9;background:center top/cover no-repeat}
+  .result-band .txt{padding:26px;display:flex;flex-direction:column;justify-content:center}
+  .result-band h3{font-size:22px}
+
+  /* Ergebnis-Bild */
+  .after{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--border);min-height:360px;background:center/cover no-repeat;display:flex;align-items:center}
+  .after:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,12,16,.92) 0%,rgba(10,12,16,.7) 45%,rgba(10,12,16,0) 75%)}
+  .after .in{position:relative;padding:40px;max-width:560px}
+  .after h2{font-size:clamp(28px,4vw,42px);margin-bottom:10px}
+  .after .lead{color:#c9d1db}
+  @media(max-width:700px){.after:before{background:rgba(10,12,16,.78)}}
 </style>
 </head>
 <body>
@@ -232,6 +317,7 @@
   <div class="wrap row">
     <span class="logo">iou<span class="d">.</span>fm</span>
     <div class="links">
+      <a class="hideS" href="#film" data-play>Film</a>
       <a class="hideS" href="#erstattungen">Shop-Erstattungen</a>
       <a class="hideS" href="#funktionen">Funktionen</a>
       <a class="hideS" href="#rechner">Zeitersparnis</a>
@@ -247,13 +333,27 @@
 <!-- HERO -->
 <header class="hero">
   <div class="wrap">
-    <h1>Shop-Erstattungen, Löhne &amp; Rechnungen als <span class="accent">eine</span> SEPA-Überweisung.</h1>
-    <p class="sub">iou.fm liest Rückerstattungen aus <strong>Shopify, WooCommerce &amp; Shopware</strong>, Löhne aus dem DATEV-Lohn-PDF und Eingangsrechnungen ein – und macht daraus eine <strong>geprüfte SEPA-Sammelüberweisung (pain.001)</strong> oder sendet direkt per <strong>EBICS</strong> an die Bank. Belege landen GoBD-konform automatisch beim Steuerberater.</p>
-    <div class="cta">
-      <a class="btn-primary" href="#download">7 Tage kostenlos testen</a>
-      <a class="btn-ghost" href="#rechner">Was spart das? →</a>
+   <div class="hero-grid">
+    <div>
+      <span class="kicker"><i></i>SEPA &amp; EBICS · für Shopify, WooCommerce &amp; Shopware</span>
+      <h1><span class="h1-pre">SEPA-Sammelüberweisung für Shop-Erstattungen, Löhne &amp; Rechnungen</span>Hunderte Überweisungen. <span class="accent">Ein&nbsp;Klick.</span></h1>
+      <p class="sub">iou.fm holt Rückerstattungen aus deinem Shop, Löhne aus dem DATEV-Lohn-PDF und Eingangsrechnungen – prüft jede IBAN und macht daraus <strong>eine SEPA-Datei (pain.001)</strong> oder sendet direkt per <strong>EBICS</strong> an die Bank. Belege gehen GoBD-konform automatisch an den Steuerberater.</p>
+      <div class="cta">
+        <a class="btn-primary" href="#download">7 Tage kostenlos testen</a>
+        <a class="btn-ghost" href="#film" data-play>▶ Film ansehen (60 s)</a>
+      </div>
+      <p class="microcopy">macOS &amp; Windows · Ende-zu-Ende verschlüsselt · keine Kreditkarte · monatlich kündbar</p>
     </div>
-    <p class="microcopy">Desktop-App für macOS &amp; Windows · Ende-zu-Ende verschlüsselt · keine Kreditkarte nötig</p>
+    <div id="film">
+      <div class="film">
+        <button class="cover" type="button" aria-label="Erklärfilm abspielen: iou.fm in 60 Sekunden" style="background-image:url(media/spot-poster.jpg)">
+          <span class="play" aria-hidden="true"></span>
+          <span class="cap"><span class="dur">1:00</span> iou.fm in 60 Sekunden – mit Ton</span>
+        </button>
+      </div>
+      <p class="film-note">Freitagabend, 214 offene Erstattungen – und wie es auch anders geht.</p>
+    </div>
+   </div>
 
     <div class="statband">
       <div class="stat"><div class="big">bis 40&nbsp;Std.</div><div class="lbl">gespart pro Monat (bei 500 Zahlungen)</div></div>
@@ -263,6 +363,28 @@
     </div>
   </div>
 </header>
+
+<!-- PROBLEM (PAS) -->
+<section class="block" id="problem">
+  <div class="wrap">
+    <div class="story">
+      <div class="pic" style="background-image:url(media/hands.webp)" role="img" aria-label="Hände tippen spätabends IBANs von Haftnotizen ins Online-Banking">
+        <div class="stamp">Freitag, 21:47.<small>Noch 214 Erstattungen offen.</small></div>
+      </div>
+      <div class="txt">
+        <p class="eyebrow">Kennst du das?</p>
+        <h2>Jede IBAN. Von Hand. Jeden Monat wieder.</h2>
+        <p class="answer">Shop-Erstattungen, Löhne und Rechnungen landen bei den meisten Teams als Einzelüberweisung im Online-Banking. Das kostet Abende – und jeder Zahlendreher kostet Geld.</p>
+        <ul class="pains">
+          <li><b>Abtippen statt arbeiten:</b> rund 5 Minuten pro Überweisung inkl. Kontrolle.</li>
+          <li><b>Zahlendreher:</b> eine falsche IBAN bedeutet Rückläufer, Nachfragen, Ärger.</li>
+          <li><b>Doppelt gezahlt:</b> ohne Abgleich fällt eine doppelte Erstattung oft erst Wochen später auf.</li>
+          <li><b>Belege jagen:</b> am Monatsende fehlt der Steuerberaterin wieder die Hälfte.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- WAS IST -->
 <section class="block" id="was-ist">
@@ -305,9 +427,17 @@
     <p class="eyebrow">So funktioniert's</p>
     <h2>In 3 Schritten von der Zahlung zur fertigen SEPA-Datei</h2>
     <div class="steps" style="margin-top:22px">
-      <div class="step"><div class="n">1</div><h3>Reinziehen</h3><p>Löhne als DATEV-Lohn-PDF, Eingangsrechnungen als Datei, Rückerstattungen direkt aus Shopify/WooCommerce/Shopware – oder eine Bank-CSV. iou.fm liest Empfänger, IBAN und Betrag automatisch aus.</p></div>
-      <div class="step"><div class="n">2</div><h3>Prüfen</h3><p>Alle Positionen auf einen Blick. IBANs werden validiert, die Rechnungs-/Bestellnummer landet im Verwendungszweck, schon bezahlte Posten werden gewarnt – nie wieder doppelt überweisen.</p></div>
-      <div class="step"><div class="n">3</div><h3>Senden</h3><p>Eine fertige SEPA-Datei (pain.001) zum Upload ins Banking – oder im Bank-Tarif direkt per EBICS, freigegeben über deine Banking-App. Belege gehen automatisch an den Steuerberater.</p></div>
+      <div class="step"><div class="shot"><img src="media/s1.webp" width="1400" height="566" loading="lazy" alt="iou.fm: offene Shop-Erstattungen aus Shopify geladen, mit Bestellnummer und Betrag" /></div><div class="n">1</div><h3>Reinziehen</h3><p>Löhne als DATEV-Lohn-PDF, Eingangsrechnungen als Datei, Rückerstattungen direkt aus Shopify/WooCommerce/Shopware – oder eine Bank-CSV. iou.fm liest Empfänger, IBAN und Betrag automatisch aus.</p></div>
+      <div class="step"><div class="shot"><img src="media/s2.webp" width="1400" height="566" loading="lazy" alt="iou.fm markiert eine ungültige IBAN und warnt vor einer Doppelzahlung" /></div><div class="n">2</div><h3>Prüfen</h3><p>Alle Positionen auf einen Blick. IBANs werden validiert, die Rechnungs-/Bestellnummer landet im Verwendungszweck, schon bezahlte Posten werden gewarnt – nie wieder doppelt überweisen.</p></div>
+      <div class="step"><div class="shot"><img src="media/s3.webp" width="1400" height="566" loading="lazy" alt="iou.fm erstellt eine SEPA-Datei oder sendet die Sammelüberweisung per EBICS an die Bank" /></div><div class="n">3</div><h3>Senden</h3><p>Eine fertige SEPA-Datei (pain.001) zum Upload ins Banking – oder im Bank-Tarif direkt per EBICS, freigegeben über deine Banking-App. Belege gehen automatisch an den Steuerberater.</p></div>
+    </div>
+    <div class="result-band">
+      <div class="shot" style="background-image:url(media/s4.webp)" role="img" aria-label="iou.fm-Archiv: jeder Zahlungslauf mit Status an den Steuerberater gesendet"></div>
+      <div class="txt">
+        <p class="eyebrow">Und danach?</p>
+        <h3>Belege? Erledigt.</h3>
+        <p class="answer" style="margin:0">Jeder Lauf landet im durchsuchbaren Archiv. Zum Monatsende geht die Liste aller Stornos &amp; Erstattungen – mit Zahlungsmethode, Erstattungsart und Kommentar – automatisch als CSV an deine Steuerberaterin. GoBD-konform.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -501,10 +631,13 @@
 
 <section class="block">
   <div class="wrap narrow">
-    <div class="ctaband">
-      <h2>Hol dir deine Stunden zurück.</h2>
-      <p class="lead" style="margin:0 auto 20px;text-align:center">7 Tage kostenlos, keine Kreditkarte. Die erste Sammelüberweisung läuft noch heute.</p>
-      <a class="btn-primary" href="#download">Jetzt kostenlos testen</a>
+    <div class="after" style="background-image:url(media/morning.webp)" role="img" aria-label="Dieselbe Mitarbeiterin am Morgen, entspannt mit Kaffee">
+      <div class="in">
+        <p class="eyebrow">Freitag, 17:00 – Feierabend</p>
+        <h2>Bis zu 40 Stunden im Monat zurück.</h2>
+        <p class="lead" style="margin:0 0 22px">Bei 500 Zahlungen pro Monat, konservativ gerechnet. 7 Tage kostenlos, keine Kreditkarte – die erste Sammelüberweisung läuft noch heute.</p>
+        <a class="btn-primary" href="#download">Jetzt 7 Tage kostenlos testen</a>
+      </div>
     </div>
   </div>
 </section>
@@ -521,6 +654,32 @@
 </footer>
 
 <script>
+  // ---- Erklärfilm: lädt erst beim Klick (spart Datenvolumen), mit Ton ----
+  (function(){
+    var box = document.querySelector('#film .film'); if (!box) return;
+    var cover = box.querySelector('.cover');
+    function play(){
+      if (box.querySelector('video')) { box.querySelector('video').play(); return; }
+      var big = window.matchMedia('(min-width: 1100px)').matches && (window.devicePixelRatio || 1) >= 1;
+      var v = document.createElement('video');
+      v.src = big ? 'media/iou-spot-1080.mp4' : 'media/iou-spot-720.mp4';
+      v.poster = 'media/spot-poster.jpg';
+      v.controls = true; v.playsInline = true; v.preload = 'auto';
+      v.setAttribute('aria-label', 'iou.fm in 60 Sekunden');
+      v.addEventListener('ended', function(){ v.poster = 'media/spot-endcard.jpg'; });
+      box.appendChild(v); cover.remove();
+      var p = v.play(); if (p && p.catch) p.catch(function(){});
+    }
+    cover.addEventListener('click', play);
+    document.querySelectorAll('[data-play]').forEach(function(a){
+      a.addEventListener('click', function(e){
+        e.preventDefault();
+        document.getElementById('film').scrollIntoView({behavior:'smooth', block:'center'});
+        play();
+      });
+    });
+  })();
+
   // ---- Zeitersparnis-Rechner ----
   (function(){
     var RATE = 35;           // €/Std. Bürokosten (beispielhaft)
