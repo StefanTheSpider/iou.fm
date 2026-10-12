@@ -141,6 +141,8 @@ export default function Lohn({ data, updateData, canPay = true, ebicsAllowed = f
     const v = validateIban(debtor.iban);
     if (!v.ok) return fail("Das Auftraggeberkonto hat keine gültige IBAN.");
     if (!stats.selRows.length) return fail("Keine Zeilen ausgewählt.");
+    const noName = stats.selRows.filter((r) => !String(r.displayName || "").trim());
+    if (noName.length) return fail(`${noName.length} Zeile(n) ohne Empfängername – die Bank würde die SEPA-Datei ablehnen. Bitte Namen ergänzen.`);
 
     const execIso = parsed.executionDate || new Date().toISOString().slice(0, 10);
     const [y, m] = execIso.split("-");

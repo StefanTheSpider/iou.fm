@@ -3,7 +3,7 @@ import { inspectIban, formatIban, validateIban, cleanIban } from "../lib/iban.js
 import BufferedInput from "./BufferedInput.jsx";
 import { parseAmount, formatEur } from "../lib/money.js";
 import { computeRefund, REFUND_MODES } from "../lib/refund.js";
-import { buildSepaXml, downloadXml } from "../lib/sepa.js";
+import { buildSepaXml, downloadXml, sanitizeSepaText } from "../lib/sepa.js";
 import { fetchOrder, ecommerceConfig, ecommerceConfigured, platformLabel } from "../lib/ecommerce/index.js";
 import EbicsSendButton from "./EbicsSendButton.jsx";
 import { toastError } from "../lib/toast.js";
@@ -80,7 +80,8 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
 
   // Alle Änderungen laufen über data.refunds → der Speichern-Button erscheint.
   const setRefunds = (fn) => updateData((d) => ({ ...d, refunds: fn(d.refunds || []) }));
-  function patchRow(id, patch) { setRefunds((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r))); }
+  // updatedAt: Zeitstempel der letzten Bearbeitung – entscheidet beim Sync-Konflikt, welche Version gewinnt.
+  function patchRow(id, patch) { setRefunds((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch, updatedAt: Date.now() } : r))); }
   function removeRow(id) {
     // SICHERHEITSNETZ: Bereits erledigte Einträge (per SEPA überwiesen/erstattet/storniert)
     // werden NIEMALS gelöscht oder getombstonet – ausgezahltes/abgeschlossenes bleibt erhalten.
@@ -164,8 +165,10 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
     // IBAN LIVE prüfen – NICHT dem gespeicherten Flag `r.ibanValid` vertrauen. Das kann von einem
     // anderen Gerät / älteren Stand fälschlich „ungültig" sein, obwohl die IBAN gültig ist.
     const ibanOk = validateIban(r.iban).ok;
-    const sepaEligible = sepaMode && r.status === "offen" && ibanOk && refund.valid && isEur;
-    return { paidCents, refund, isEur, sepaMode, sepaEligible, ibanOk };
+    // Empfängername ist SEPA-Pflicht (Bank lehnt <Cdtr><Nm></Nm> ab) – nach Bereinigung prüfen.
+    const nameOk = !!sanitizeSepaText(r.customerName);
+    const sepaEligible = sepaMode && r.status === "offen" && nameOk && ibanOk && refund.valid && isEur;
+    return { paidCents, refund, isEur, sepaMode, sepaEligible, ibanOk, nameOk };
   }
 
   const computed = rows.map((r) => ({ r, ...calc(r) }));
@@ -318,7 +321,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
       </div>
 
       <div className="refunds">
-        {visible.map(({ r, refund, isEur, sepaMode, sepaEligible, ibanOk }) => {
+        {visible.map(({ r, refund, isEur, sepaMode, sepaEligible, ibanOk, nameOk }) => {
           const ibanLen = (r.iban || "").replace(/[^0-9A-Za-z]/g, "").length;
           const showInvalid = sepaMode && !ibanOk && ibanLen >= 15;
           // Warum ist dieser offene Eintrag (noch) nicht für die SEPA-Datei auswählbar?
@@ -327,6 +330,7 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
           let block = null;
           if (sepaMode && r.status === "offen" && !sepaEligible) {
             if (!isEur) block = { field: "paid", short: `${r.currency} – kein SEPA`, msg: `Währung ${r.currency} – nur Beträge in EUR sind per SEPA-Überweisung zahlbar.` };
+            else if (!nameOk) block = { field: "name", short: "Name fehlt", msg: "Name / Kontoinhaber fehlt – ohne Empfängername lehnt die Bank die SEPA-Datei ab. Bitte oben links eintragen." };
             else if (!ibanOk) block = ibanLen >= 15
               ? { field: "iban", short: "IBAN ungültig", msg: "IBAN ungültig – bitte die IBAN des Empfängers prüfen und korrigieren." }
               : { field: "iban", short: "IBAN fehlt", msg: "IBAN fehlt – bitte die IBAN des Empfängers eintragen, damit überwiesen werden kann." };
@@ -344,7 +348,8 @@ export default function Erstattungen({ data, updateData, profile = "erstattung",
                     title={sepaEligible ? "in SEPA-Datei aufnehmen" : `Noch nicht auswählbar – ${blockReason || "Angaben unvollständig"}`} />
                 )}
                 <div className="who-wrap">
-                  <BufferedInput className="who-input" value={r.customerName} placeholder={isErstattung ? "Name / Kontoinhaber" : "Empfänger"}
+                  <BufferedInput className="who-input" value={r.customerName} placeholder={block?.field === "name" ? "Name fehlt – bitte eintragen" : (isErstattung ? "Name / Kontoinhaber" : "Empfänger")}
+                    style={block?.field === "name" ? { borderColor: "var(--bad, #ff8a8a)", boxShadow: "0 0 0 2px rgba(255,138,138,.25)" } : undefined}
                     onCommit={(v) => patchRow(r.id, { customerName: v })} />
                   {isErstattung && (
                     <div className="head-meta">

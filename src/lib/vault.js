@@ -111,7 +111,13 @@ function mergeKeepDone(a = [], b = []) {
     const cur = m.get(x.id);
     // Lokal bereits erledigt, Server noch offen → lokale (erledigte) Version behalten.
     if (cur && cur.status === "erledigt" && x.status !== "erledigt") continue;
-    m.set(x.id, x); // sonst Server-Version übernehmen (inkl. Server=erledigt gewinnt über offen)
+    // Server erledigt, lokal offen → Server gewinnt (erledigt fällt nie zurück).
+    if (cur && x.status === "erledigt" && cur.status !== "erledigt") { m.set(x.id, x); continue; }
+    // Gleicher Status: die zuletzt BEARBEITETE Version gewinnt (updatedAt). Vorher gewann hier
+    // immer der Server – bei einem Sync-Konflikt (anderes Gerät hatte inzwischen gespeichert)
+    // wurden so gerade lokal getippte Felder (z. B. Name) durch den alten Server-Stand ersetzt.
+    if (cur && (Number(cur.updatedAt) || 0) > (Number(x.updatedAt) || 0)) continue;
+    m.set(x.id, x);
   }
   return Array.from(m.values());
 }

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>SEPA1791795690331</MsgId>
+      <CreDtTm>2026-10-12T09:01:30Z</CreDtTm>
+      <NbOfTxs>7</NbOfTxs>
+      <CtrlSum>5458.10</CtrlSum>
+      <InitgPty>
+        <Nm>Tix and Travel GmbH</Nm>
+      </InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>SEPA1791795690331-PMT</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <BtchBookg>false</BtchBookg>
+      <NbOfTxs>7</NbOfTxs>
+      <CtrlSum>5458.10</CtrlSum>
+      <PmtTpInf>
+        <SvcLvl><Cd>SEPA</Cd></SvcLvl>
+      </PmtTpInf>
+      <ReqdExctnDt><Dt>2026-10-12</Dt></ReqdExctnDt>
+      <Dbtr>
+        <Nm>Tix and Travel GmbH</Nm>
+      </Dbtr>
+      <DbtrAcct><Id><IBAN>DE95200400000343865202</IBAN></Id></DbtrAcct>
+      <DbtrAgt><FinInstnId><BICFI>COBADEFFXXX</BICFI></FinInstnId></DbtrAgt>
+      <ChrgBr>SLEV</ChrgBr>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>NOTPROVIDED</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">100.00</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>DORTDE33XXX</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Patrick Multhaupt</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE06440501990662047619</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Erstattung 27856 Backstreet Boys</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>27308</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">200.00</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>GENODEF1HRV</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Madeleine Hointza</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE54520626010000218952</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Erstattung 27308 Backstreet Boys Dusseldorf</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>27814</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">150.00</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>HELADEF1ESW</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Carina Bischoff</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE83522500300005505839</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Erstattung 27814 Backstreet Boys Dusseldorf</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>37884</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">146.30</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>WELADED1BUB</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Nina Weiss</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE31460512400000577189</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Erstattung 37884 Harry Styles Berlin</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>26753</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">80.00</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>VBMHDE5FXXX</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Andreas Haas</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE33513900000015735015</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Erstattung 26753 Evanescence Frankfurt</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>NOTPROVIDED</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">275.90</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>BYLADEM1001</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Oberhofer Sport und Event GmbH</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE43120300001022473449</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Auftragsnummer 236693 Tix Travel GmbH</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+      <CdtTrfTxInf>
+        <PmtId><EndToEndId>NOTPROVIDED</EndToEndId></PmtId>
+        <Amt><InstdAmt Ccy="EUR">4505.90</InstdAmt></Amt>
+        <CdtrAgt><FinInstnId><BICFI>BYLADEM1001</BICFI></FinInstnId></CdtrAgt>
+        <Cdtr>
+          <Nm>Oberhofer Sport und Event GmbH</Nm>
+        </Cdtr>
+        <CdtrAcct><Id><IBAN>DE43120300001022473449</IBAN></Id></CdtrAcct>
+        <RmtInf><Ustrd>Auftragsnummer 236625 Tix Travel GmbH</Ustrd></RmtInf>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>

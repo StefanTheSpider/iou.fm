@@ -61,7 +61,7 @@ export default function Rechnungen({ data, updateData, canPay = true, userName =
   const [fStatus, setFStatus] = useState("offen");
 
   const setInvoices = (fn) => updateData((d) => ({ ...d, invoices: fn(d.invoices || []) }));
-  const patchRow = (id, patch) => setInvoices((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const patchRow = (id, patch) => setInvoices((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch, updatedAt: Date.now() } : r)));
   const removeRow = (id) => {
     // SICHERHEITSNETZ: bezahlte (erledigte) Rechnungen werden NIEMALS gelöscht.
     const row = (data.invoices || []).find((x) => x.id === id);

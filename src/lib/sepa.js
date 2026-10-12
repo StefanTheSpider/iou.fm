@@ -48,6 +48,12 @@ function trimBic(raw) {
  * @param {string} [p.msgId]
  */
 export function buildSepaXml({ debtor, executionDate, payments, category = null, msgId }) {
+  // Letzte Schranke: Empfängername ist Pflicht (pain.001 Nm min. 1 Zeichen). Leere Namen
+  // erzeugten Bank-Fehler „ungültiger Wert beim Element Cdtr" – lieber gar keine Datei.
+  const noName = payments.filter((p) => !sanitizeSepaText(p.name));
+  if (noName.length) {
+    throw new Error(`Empfängername fehlt bei ${noName.length} Zahlung(en) (${noName.map((p) => p.purpose || p.iban).join(", ")}). Ohne Namen lehnt die Bank die Datei ab.`);
+  }
   const id = msgId || `SEPA${Date.now()}`;
   const totalCents = payments.reduce((s, p) => s + Math.round(p.amountCents), 0);
   const nbTx = payments.length;
@@ -99,10 +105,11 @@ export function buildSepaXml({ debtor, executionDate, payments, category = null,
     lines.push(`        <Amt><InstdAmt Ccy="EUR">${centsToAmount(p.amountCents)}</InstdAmt></Amt>`);
     if (bic) lines.push(`        <CdtrAgt><FinInstnId><BICFI>${bic}</BICFI></FinInstnId></CdtrAgt>`);
     lines.push("        <Cdtr>");
-    lines.push(`          <Nm>${xmlEscape(sanitizeSepaText(p.name))}</Nm>`);
+    // Längen nach pain.001: Nm max. 70, Ustrd max. 140 Zeichen (sonst lehnt die Bank ab).
+    lines.push(`          <Nm>${xmlEscape(sanitizeSepaText(p.name).slice(0, 70).trim())}</Nm>`);
     lines.push("        </Cdtr>");
     lines.push(`        <CdtrAcct><Id><IBAN>${xmlEscape(p.iban.replace(/\s/g, ""))}</IBAN></Id></CdtrAcct>`);
-    lines.push(`        <RmtInf><Ustrd>${xmlEscape(sanitizeSepaText(p.purpose))}</Ustrd></RmtInf>`);
+    lines.push(`        <RmtInf><Ustrd>${xmlEscape(sanitizeSepaText(p.purpose).slice(0, 140).trim())}</Ustrd></RmtInf>`);
     lines.push("      </CdtTrfTxInf>");
   }
   lines.push("    </PmtInf>");
